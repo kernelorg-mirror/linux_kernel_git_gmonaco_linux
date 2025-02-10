@@ -283,3 +283,40 @@ module_exit(unregister_throttle);
 MODULE_LICENSE("GPL");
 MODULE_AUTHOR("Gabriele Monaco <gmonaco@redhat.com>");
 MODULE_DESCRIPTION("throttle: throttle dl entities when they use up their runtime.");
+
+#ifdef CONFIG_RV_MONITORS_KUNIT_TEST
+#include "rv_monitors_test.h"
+
+void rv_test_throttle(struct kunit *test)
+{
+	static struct task_struct *target, *other;
+	struct rv_kunit_ctx *ctx = test->priv;
+
+	da_prepare_test(test, &rv_this);
+	target = kunit_kzalloc(test, sizeof(struct task_struct), GFP_KERNEL);
+	other = kunit_kzalloc(test, sizeof(struct task_struct), GFP_KERNEL);
+	target->pid = 99;
+	target->policy = SCHED_DEADLINE;
+	target->dl.runtime = 10000;
+	target->dl.deadline = 20000;
+
+	handle_newtask(NULL, target, 0);
+
+	/* Task gets throttled on time but switched back in without replenish */
+	handle_sched_switch(NULL, 0, other, target, TASK_RUNNING);
+	handle_dl_replenish(NULL, &target->dl, 0, DL_OTHER);
+	udelay(9);
+	handle_dl_throttle(NULL, &target->dl, 0, DL_OTHER);
+	RV_KUNIT_EXPECT_NO_REACTION(test, ctx);
+	handle_sched_switch(NULL, 0, other, target, TASK_RUNNING);
+	RV_KUNIT_EXPECT_REACTION(test, ctx);
+
+	/* Task runs longer than runtime */
+	handle_sched_switch(NULL, 0, other, target, TASK_RUNNING);
+	handle_dl_replenish(NULL, &target->dl, 0, DL_OTHER);
+	udelay(10 + TICK_USEC);
+	handle_dl_throttle(NULL, &target->dl, 0, DL_OTHER);
+	RV_KUNIT_EXPECT_REACTION(test, ctx);
+}
+EXPORT_SYMBOL_GPL(rv_test_throttle);
+#endif

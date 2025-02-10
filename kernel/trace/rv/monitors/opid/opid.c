@@ -121,3 +121,24 @@ module_exit(unregister_opid);
 MODULE_LICENSE("GPL");
 MODULE_AUTHOR("Gabriele Monaco <gmonaco@redhat.com>");
 MODULE_DESCRIPTION("opid: operations with preemption and irq disabled.");
+
+#ifdef CONFIG_RV_MONITORS_KUNIT_TEST
+#include "rv_monitors_test.h"
+
+void rv_test_opid(struct kunit *test)
+{
+	struct rv_kunit_ctx *ctx = test->priv;
+
+	da_prepare_test(test, &rv_this);
+
+	/* Wakeup with preemption and interrupts enabled */
+	KUNIT_ASSERT_TRUE(test, preemptible());
+	handle_sched_waking(NULL, NULL);
+	RV_KUNIT_EXPECT_REACTION(test, ctx);
+
+	/* Need resched with interrupts enabled */
+	scoped_guard(preempt)
+		handle_sched_need_resched(NULL, NULL, 0, TIF_NEED_RESCHED);
+}
+EXPORT_SYMBOL_GPL(rv_test_opid);
+#endif
