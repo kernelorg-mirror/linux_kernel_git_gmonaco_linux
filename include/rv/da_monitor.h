@@ -817,4 +817,35 @@ static inline void da_reset(da_id_type id, monitor_target target)
 }
 #endif /* RV_MON_TYPE */
 
+#ifdef CONFIG_RV_MONITORS_KUNIT_TEST
+#include <kunit/test.h>
+
+/*
+ * rv_prepare_test - Disable the monitor for a kunit test
+ */
+static inline void da_teardown_test(void *arg)
+{
+	struct rv_monitor *rv_this = arg;
+
+	rv_this->enabled = 0;
+	da_monitor_destroy();
+}
+
+/*
+ * rv_prepare_test - Enable the monitor for a kunit test
+ *
+ * Do the bare minimum to set up the monitor, make sure it is not active and
+ * real tracepoint handlers are NOT attached.
+ */
+static inline void da_prepare_test(struct kunit *test, struct rv_monitor *rv_this)
+{
+	KUNIT_ASSERT_FALSE(test, rv_this->enabled);
+	da_monitor_init();
+	rv_this->enabled = 1;
+
+	KUNIT_ASSERT_EQ(test, 0,
+			kunit_add_action_or_reset(test, da_teardown_test, rv_this));
+}
+#endif /* CONFIG_RV_MONITORS_KUNIT_TEST */
+
 #endif

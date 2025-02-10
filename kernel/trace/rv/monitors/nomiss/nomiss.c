@@ -291,3 +291,33 @@ module_exit(unregister_nomiss);
 MODULE_LICENSE("GPL");
 MODULE_AUTHOR("Gabriele Monaco <gmonaco@redhat.com>");
 MODULE_DESCRIPTION("nomiss: dl entities run to completion before their deadline.");
+
+#ifdef CONFIG_RV_MONITORS_KUNIT_TEST
+#include "rv_monitors_test.h"
+
+void rv_test_nomiss(struct kunit *test)
+{
+	static struct task_struct *target, *other;
+	struct rv_kunit_ctx *ctx = test->priv;
+
+	da_prepare_test(test, &rv_this);
+	target = kunit_kzalloc(test, sizeof(struct task_struct), GFP_KERNEL);
+	other = kunit_kzalloc(test, sizeof(struct task_struct), GFP_KERNEL);
+	target->pid = 99;
+	target->policy = SCHED_DEADLINE;
+	target->dl.runtime = 10000;
+	target->dl.deadline = 20000;
+
+	handle_newtask(NULL, target, 0);
+
+	/* Task gets preempted and can't terminate before deadline */
+	handle_sched_switch(NULL, 0, other, target, TASK_RUNNING);
+	handle_dl_replenish(NULL, &target->dl, 0, DL_TASK);
+	udelay(10 / 1000);
+	handle_sched_switch(NULL, 0, target, other, TASK_RUNNING);
+	udelay(10 + deadline_thresh / 1000);
+	handle_sched_switch(NULL, 0, other, target, TASK_RUNNING);
+	RV_KUNIT_EXPECT_REACTION(test, ctx);
+}
+EXPORT_SYMBOL_GPL(rv_test_nomiss);
+#endif

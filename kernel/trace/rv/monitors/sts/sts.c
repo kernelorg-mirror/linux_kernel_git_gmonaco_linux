@@ -152,3 +152,38 @@ module_exit(unregister_sts);
 MODULE_LICENSE("GPL");
 MODULE_AUTHOR("Gabriele Monaco <gmonaco@redhat.com>");
 MODULE_DESCRIPTION("sts: schedule implies task switch.");
+
+#ifdef CONFIG_RV_MONITORS_KUNIT_TEST
+#include "rv_monitors_test.h"
+
+void rv_test_sts(struct kunit *test)
+{
+	static struct task_struct *target, *other;
+	struct rv_kunit_ctx *ctx = test->priv;
+
+	da_prepare_test(test, &rv_this);
+	target = kunit_kzalloc(test, sizeof(struct task_struct), GFP_KERNEL);
+	other = kunit_kzalloc(test, sizeof(struct task_struct), GFP_KERNEL);
+	/* Per-CPU monitor, make sure we don't change CPU mid-test */
+	guard(migrate)();
+
+	handle_schedule_exit(NULL, false);
+
+	/* Switch without disabling interrupts */
+	handle_schedule_exit(NULL, false);
+	handle_schedule_entry(NULL, false);
+	handle_sched_switch(NULL, 0, target, other, TASK_RUNNING);
+	RV_KUNIT_EXPECT_REACTION(test, ctx);
+
+	handle_schedule_exit(NULL, false);
+
+	/* Schedule from interrupt context */
+	handle_schedule_entry(NULL, false);
+	handle_irq_disable(NULL, 0, 0);
+	handle_irq_entry(NULL, 0, NULL);
+	handle_sched_switch(NULL, 0, target, other, TASK_RUNNING);
+	handle_irq_enable(NULL, 0, 0);
+	RV_KUNIT_EXPECT_REACTION(test, ctx);
+}
+EXPORT_SYMBOL_GPL(rv_test_sts);
+#endif

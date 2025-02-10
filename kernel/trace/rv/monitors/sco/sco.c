@@ -83,3 +83,26 @@ module_exit(unregister_sco);
 MODULE_LICENSE("GPL");
 MODULE_AUTHOR("Gabriele Monaco <gmonaco@redhat.com>");
 MODULE_DESCRIPTION("sco: scheduling context operations.");
+
+#ifdef CONFIG_RV_MONITORS_KUNIT_TEST
+#include "rv_monitors_test.h"
+
+void rv_test_sco(struct kunit *test)
+{
+	static struct task_struct *target;
+	struct rv_kunit_ctx *ctx = test->priv;
+
+	da_prepare_test(test, &rv_this);
+	target = kunit_kzalloc(test, sizeof(struct task_struct), GFP_KERNEL);
+
+	/* The handlers are called with preemption disabled. */
+	guard(preempt)();
+
+	/* Set state while scheduling */
+	handle_sched_set_state(NULL, target, TASK_INTERRUPTIBLE);
+	handle_schedule_entry(NULL, false);
+	handle_sched_set_state(NULL, target, TASK_INTERRUPTIBLE);
+	RV_KUNIT_EXPECT_REACTION(test, ctx);
+}
+EXPORT_SYMBOL_GPL(rv_test_sco);
+#endif
