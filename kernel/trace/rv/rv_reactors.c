@@ -63,6 +63,7 @@
 
 #include <linux/lockdep.h>
 #include <linux/slab.h>
+#include <kunit/static_stub.h>
 
 #include "rv.h"
 
@@ -467,6 +468,8 @@ void rv_react(struct rv_monitor *monitor, const char *msg, ...)
 {
 	static DEFINE_WAIT_OVERRIDE_MAP(rv_react_map, LD_WAIT_FREE);
 	va_list args;
+
+	KUNIT_STATIC_STUB_REDIRECT(rv_react, monitor, msg);
 
 	if (!rv_reacting_on() || !monitor->react)
 		return;
