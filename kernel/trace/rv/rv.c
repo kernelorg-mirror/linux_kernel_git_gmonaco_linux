@@ -142,6 +142,7 @@
 #include <linux/module.h>
 #include <linux/init.h>
 #include <linux/slab.h>
+#include <kunit/static_stub.h>
 
 #ifdef CONFIG_RV_MON_EVENTS
 #define CREATE_TRACE_POINTS
@@ -171,6 +172,8 @@ int rv_get_task_monitor_slot(void)
 {
 	int i;
 
+	KUNIT_STATIC_STUB_REDIRECT(rv_get_task_monitor_slot);
+
 	lockdep_assert_held(&rv_interface_lock);
 
 	if (task_monitor_count == CONFIG_RV_PER_TASK_MONITORS)
@@ -192,6 +195,8 @@ int rv_get_task_monitor_slot(void)
 
 void rv_put_task_monitor_slot(int slot)
 {
+	KUNIT_STATIC_STUB_REDIRECT(rv_put_task_monitor_slot, slot);
+
 	lockdep_assert_held(&rv_interface_lock);
 
 	if (slot < 0 || slot >= CONFIG_RV_PER_TASK_MONITORS) {
