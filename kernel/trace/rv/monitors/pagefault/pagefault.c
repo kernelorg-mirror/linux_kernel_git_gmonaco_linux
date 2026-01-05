@@ -86,3 +86,27 @@ module_exit(unregister_pagefault);
 MODULE_LICENSE("GPL");
 MODULE_AUTHOR("Nam Cao <namcao@linutronix.de>");
 MODULE_DESCRIPTION("pagefault: Monitor that RT tasks do not raise page faults");
+
+#ifdef CONFIG_RV_MONITORS_KUNIT_TEST
+#include "rv_monitors_test.h"
+
+void rv_test_pagefault(struct kunit *test)
+{
+	static struct task_struct *target;
+	struct rv_kunit_ctx *ctx = test->priv;
+
+	ltl_prepare_test(test, &rv_pagefault);
+	target = kunit_kzalloc(test, sizeof(struct task_struct), GFP_KERNEL);
+	target->policy = SCHED_FIFO;
+	target->prio = MAX_RT_PRIO - 1;
+	handle_task_newtask(NULL, target, 0);
+
+	ltl_attempt_start(target, ltl_get_monitor(target));
+
+	/* RT task has a page fault */
+	rv_mock_current(ctx, target);
+	handle_page_fault(NULL, 0, NULL, 0);
+	RV_KUNIT_EXPECT_REACTION(test, ctx);
+}
+EXPORT_SYMBOL_GPL(rv_test_pagefault);
+#endif
