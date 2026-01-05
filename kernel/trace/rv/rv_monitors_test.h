@@ -23,6 +23,9 @@ struct rv_kunit_ctx {
 			ctx->expected = ctx->reactions;               \
 	} while (0)
 
+#define rv_mock_current(ctx, task) (ctx->curr = task)
+#define rv_mock_cpu(ctx, cpu) (ctx->cpu = cpu)
+
 #ifdef CONFIG_RV_MON_SCO
 extern void rv_test_sco(struct kunit *test);
 #else

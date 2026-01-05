@@ -8,6 +8,7 @@
  *   trigger events in order to verify error detection.
  */
 #include "rv_monitors_test.h"
+#include <rv/kunit_stubs.h>
 #include <kunit/static_stub.h>
 #include <kunit/test-bug.h>
 #include <linux/kernel.h>
@@ -30,6 +31,30 @@ static void stub_rv_put_task_monitor_slot(int slot)
 {
 }
 
+struct task_struct *rv_get_current(void)
+{
+	KUNIT_STATIC_STUB_REDIRECT(rv_get_current);
+	return current;
+}
+int rv_current_cpu(void)
+{
+	KUNIT_STATIC_STUB_REDIRECT(rv_current_cpu);
+	return smp_processor_id();
+}
+
+static struct task_struct *stub_rv_get_current(void)
+{
+	struct rv_kunit_ctx *ctx = kunit_get_current_test()->priv;
+
+	return ctx->curr;
+}
+static int stub_rv_current_cpu(void)
+{
+	struct rv_kunit_ctx *ctx = kunit_get_current_test()->priv;
+
+	return ctx->cpu;
+}
+
 static int rv_trigger_test_init(struct kunit *test)
 {
 	struct rv_kunit_ctx *ctx;
@@ -44,6 +69,8 @@ static int rv_trigger_test_init(struct kunit *test)
 				   stub_rv_get_task_monitor_slot);
 	kunit_activate_static_stub(test, rv_put_task_monitor_slot,
 				   stub_rv_put_task_monitor_slot);
+	kunit_activate_static_stub(test, rv_get_current, stub_rv_get_current);
+	kunit_activate_static_stub(test, rv_current_cpu, stub_rv_current_cpu);
 
 	return 0;
 }

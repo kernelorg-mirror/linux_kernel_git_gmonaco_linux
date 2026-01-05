@@ -15,6 +15,7 @@
 #define _RV_DA_MONITOR_H
 
 #include <rv/automata.h>
+#include <rv/kunit_stubs.h>
 #include <linux/rv.h>
 #include <linux/stringify.h>
 #include <linux/bug.h>
