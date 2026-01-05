@@ -247,3 +247,45 @@ module_exit(unregister_sleep);
 MODULE_LICENSE("GPL");
 MODULE_AUTHOR("Nam Cao <namcao@linutronix.de>");
 MODULE_DESCRIPTION("sleep: Monitor that RT tasks do not undesirably sleep");
+
+#ifdef CONFIG_RV_MONITORS_KUNIT_TEST
+#include "rv_monitors_test.h"
+
+void rv_test_sleep(struct kunit *test)
+{
+	static struct task_struct *target, *other;
+	struct rv_kunit_ctx *ctx = test->priv;
+	unsigned long args[6];
+	struct pt_regs regs;
+
+	ltl_prepare_test(test, &rv_sleep);
+	target = kunit_kzalloc(test, sizeof(struct task_struct), GFP_KERNEL);
+	target->policy = SCHED_FIFO;
+	target->prio = MAX_RT_PRIO - 2;
+	other = kunit_kzalloc(test, sizeof(struct task_struct), GFP_KERNEL);
+	other->policy = SCHED_FIFO;
+	other->prio = MAX_RT_PRIO - 1;
+	handle_task_newtask(NULL, target, 0);
+
+	/* RT task sleeps on a non RT-friendly nanosleep */
+	rv_mock_current(ctx, target);
+	args[0] = CLOCK_REALTIME;
+	syscall_set_arguments(target, &regs, args);
+	handle_sys_enter(NULL, &regs, __NR_clock_nanosleep);
+	handle_sys_exit(NULL, NULL, 0);
+	handle_sched_set_state(NULL, target, TASK_INTERRUPTIBLE);
+	RV_KUNIT_EXPECT_REACTION(test, ctx);
+
+	/* RT task woken up by lower priority task */
+	args[1] = FUTEX_WAIT;
+	syscall_set_arguments(target, &regs, args);
+	rv_mock_current(ctx, target);
+	handle_sys_enter(NULL, &regs, __NR_futex);
+	handle_sched_set_state(NULL, target, TASK_INTERRUPTIBLE);
+	rv_mock_current(ctx, other);
+	handle_sched_waking(NULL, target);
+	handle_sched_wakeup(NULL, target);
+	RV_KUNIT_EXPECT_REACTION(test, ctx);
+}
+EXPORT_SYMBOL_GPL(rv_test_sleep);
+#endif

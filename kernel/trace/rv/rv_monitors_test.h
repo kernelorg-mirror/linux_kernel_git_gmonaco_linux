@@ -70,3 +70,21 @@ static inline void rv_test_throttle(struct kunit *test)
 	kunit_skip(test, "Monitor not enabled\n");
 }
 #endif
+
+#ifdef CONFIG_RV_MON_PAGEFAULT
+extern void rv_test_pagefault(struct kunit *test);
+#else
+static inline void rv_test_pagefault(struct kunit *test)
+{
+	kunit_skip(test, "Monitor not enabled\n");
+}
+#endif
+
+#ifdef CONFIG_RV_MON_SLEEP
+extern void rv_test_sleep(struct kunit *test);
+#else
+static inline void rv_test_sleep(struct kunit *test)
+{
+	kunit_skip(test, "Monitor not enabled\n");
+}
+#endif

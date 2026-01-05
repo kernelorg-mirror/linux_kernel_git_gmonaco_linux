@@ -172,3 +172,34 @@ static void __maybe_unused ltl_atom_pulse(struct task_struct *task, enum ltl_ato
 	ltl_atom_set(mon, atom, !value);
 	ltl_validate(task, mon);
 }
+
+#ifdef CONFIG_RV_MONITORS_KUNIT_TEST
+#include <kunit/test.h>
+
+/*
+ * rv_prepare_test - Disable the monitor for a kunit test
+ */
+static inline void ltl_teardown_test(void *arg)
+{
+	struct rv_monitor *rv_this = arg;
+
+	rv_this->enabled = 0;
+	ltl_monitor_destroy();
+}
+
+/*
+ * rv_prepare_test - Enable the monitor for a kunit test
+ *
+ * Do the bare minimum to set up the monitor, make sure it is not active and
+ * real tracepoint handlers are NOT attached.
+ */
+static inline void ltl_prepare_test(struct kunit *test, struct rv_monitor *rv_this)
+{
+	KUNIT_ASSERT_FALSE(test, rv_this->enabled);
+	ltl_monitor_init();
+	rv_this->enabled = 1;
+
+	KUNIT_ASSERT_EQ(test, 0,
+			kunit_add_action_or_reset(test, ltl_teardown_test, rv_this));
+}
+#endif /* CONFIG_RV_MONITORS_KUNIT_TEST */
