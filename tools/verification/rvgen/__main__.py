@@ -35,11 +35,16 @@ if __name__ == '__main__':
                                 help="Monitor specification file")
     monitor_parser.add_argument('-t', "--monitor_type", dest="monitor_type", required=True,
                                 help=f"Available options: {', '.join(Monitor.monitor_types.keys())}")
+    monitor_parser.add_argument('-b', "--bpf", dest="bpf", action="store_true",
+                                required=False, help="Generate a BPF monitor")
 
     container_parser = subparsers.add_parser("container")
     container_parser.add_argument('-n', "--model_name", dest="model_name", required=True)
 
     params = parser.parse_args()
+
+    if params.subcmd == "monitor" and params.bpf and params.monitor_class != "da":
+        parser.error("BPF monitors (-b/--bpf) are only supported for deterministic automaton (-c da)")
 
     try:
         if params.subcmd == "monitor":
@@ -64,7 +69,9 @@ if __name__ == '__main__':
     print("Almost done, checklist")
     if params.subcmd == "monitor":
         print(f"  - Edit the {monitor.name}/{monitor.name}.c to add the instrumentation")
-        print(monitor.fill_tracepoint_tooltip())
-    print(monitor.fill_makefile_tooltip())
-    print(monitor.fill_kconfig_tooltip())
-    print(monitor.fill_monitor_tooltip())
+        if not params.bpf:
+            print(monitor.fill_tracepoint_tooltip())
+    if not params.bpf:
+        print(monitor.fill_makefile_tooltip())
+        print(monitor.fill_kconfig_tooltip())
+        print(monitor.fill_monitor_tooltip())

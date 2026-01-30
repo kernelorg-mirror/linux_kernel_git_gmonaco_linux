@@ -36,7 +36,11 @@ class dot2k(Monitor, Dot2c):
         buff = []
         buff += self._fill_hybrid_definitions()
         for event in self.events:
-            buff.append(f"static void handle_{event}(void *data, /* XXX: fill header */)")
+            if self.bpf:
+                buff.append("SEC(/* XXX: tracepoint or other probe */)")
+                buff.append(f"int BPF_PROG(handle_{event}, /* XXX: fill header */)")
+            else:
+                buff.append(f"static void handle_{event}(void *data, /* XXX: fill header */)")
             buff.append("{")
             handle = "handle_event"
             if self.is_start_event(event):
@@ -54,6 +58,8 @@ class dot2k(Monitor, Dot2c):
                 buff.append(f"\tda_{handle}(id, t, {event}{self.enum_suffix});")
             else:
                 buff.append(f"\tda_{handle}({event}{self.enum_suffix});")
+            if self.bpf:
+                buff.append("\treturn 0;")
             buff.append("}")
             buff.append("")
         return '\n'.join(buff)
