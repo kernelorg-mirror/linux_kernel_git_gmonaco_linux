@@ -81,7 +81,10 @@ void mon_usage(int exit_val, char *monitor_name, const char *fmt, ...)
 	for (i = 0; usage[i]; i++)
 		fprintf(stderr, "%s\n", usage[i]);
 
-	ikm_usage_print_reactors();
+	if (config.is_bpf)
+		bpf_usage_print_reactors();
+	else
+		ikm_usage_print_reactors();
 	exit(exit_val);
 }
 
@@ -132,7 +135,7 @@ int parse_arguments(char *monitor_name, int argc, char **argv)
 		}
 	}
 
-	debug_msg("ikm: my pid is %d\n", config.my_pid);
+	debug_msg("%s: my pid is %d\n", config.is_bpf ? "bpf" : "ikm", config.my_pid);
 
 	return 0;
 }
