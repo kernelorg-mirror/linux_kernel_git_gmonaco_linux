@@ -82,6 +82,7 @@ void mon_usage(int exit_val, char *monitor_name, const char *fmt, ...)
 		fprintf(stderr, "%s\n", usage[i]);
 
 	ikm_usage_print_reactors();
+	bpf_usage_print_reactors();
 	exit(exit_val);
 }
 

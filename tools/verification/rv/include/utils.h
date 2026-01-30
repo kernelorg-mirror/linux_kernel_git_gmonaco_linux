@@ -10,6 +10,7 @@ void mon_usage(int exit_val, char *monitor_name, const char *fmt, ...);
 int parse_arguments(char *monitor_name, int argc, char **argv);
 
 void ikm_usage_print_reactors(void);
+void bpf_usage_print_reactors(void);
 
 struct config {
 	bool debug;
