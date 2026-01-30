@@ -1,0 +1,437 @@
+/* SPDX-License-Identifier: GPL-2.0 */
+/*
+ * BPF support for DA monitors.
+ *
+ * BPF programs can include the in-kernel da_monitor directly, this
+ * header contains all the BPF compatibility layer.
+ *
+ * Copyright (C) 2026 Red Hat Inc, Gabriele Monaco <gmonaco@redhat.com>
+ */
+
+#ifndef _DA_MONITOR_BPF_H
+#define _DA_MONITOR_BPF_H
+
+#include <bpf/bpf_helpers.h>
+#include <bpf/bpf_tracing.h>
+#include <bpf/bpf_core_read.h>
+#include "bpf_atomic.h"
+
+/* BPF monitors don't support these */
+#define rv_react(...) do {} while (0)
+#define trace_rv_retries_error(...) do {} while (0)
+#define pr_warn(fmt, ...) bpf_printk(fmt, ##__VA_ARGS__)
+#define rv_monitoring_on() 1
+#define da_implicit_guard()
+#define IS_ENABLED(conf) 0
+
+#define DA_TRACE_MSG_MAX 128
+
+/*
+ * Also used to filter out events higher values imply lower ones.
+ * Userspace will parse this enum but expects EVENT to imply ERROR(s) and ERROR
+ * to imply any other ERROR* type.
+ */
+enum rv_trace_type {
+	RV_TRACE_NONE,
+	RV_TRACE_ERROR,
+	RV_TRACE_EVENT,
+};
+
+/* Configuration set from userspace before loading */
+const volatile SEC(".rodata.trace_level") enum rv_trace_type trace_level = RV_TRACE_NONE;
+
+#define rv_mon_map CONCATENATE(rv_mon_, MONITOR_NAME)
+#define rv_rb CONCATENATE(rv_rb_, MONITOR_NAME)
+
+struct {
+	__uint(type, BPF_MAP_TYPE_RINGBUF);
+	__uint(max_entries, 256 * 1024);
+} rv_rb SEC(".maps");
+
+#ifndef __used
+#define __used __attribute__((used))
+#endif
+
+/* Force types to be included in BTF for userspace parsing */
+static const enum states __used _btf_states;
+static const enum events __used _btf_events;
+
+static inline void da_monitor_reset(struct da_monitor *da_mon);
+
+/* BPF monitors do not use reactors */
+static inline void react(enum states curr_state, enum events event) { }
+
+/*
+ * BPF monitor implementations
+ * These use BPF maps instead of kernel data structures
+ */
+
+#if RV_MON_TYPE == RV_MON_GLOBAL
+/*
+ * BPF Global monitor - uses a single-entry BPF array map
+ */
+
+struct {
+	__uint(type, BPF_MAP_TYPE_ARRAY);
+	__uint(max_entries, 1);
+	__type(key, __u32);
+	__type(value, union rv_task_monitor);
+} rv_mon_map SEC(".maps");
+
+static inline struct da_monitor *da_get_monitor(void)
+{
+	__u32 key = 0;
+	union rv_task_monitor *mon = bpf_map_lookup_elem(&rv_mon_map, &key);
+
+	return &mon->da_mon;
+}
+
+#elif RV_MON_TYPE == RV_MON_PER_CPU
+/*
+ * BPF Per-CPU monitor - uses BPF per-cpu array map
+ */
+
+struct {
+	__uint(type, BPF_MAP_TYPE_PERCPU_ARRAY);
+	__uint(max_entries, 1);
+	__type(key, __u32);
+	__type(value, union rv_task_monitor);
+} rv_mon_map SEC(".maps");
+
+static inline struct da_monitor *da_get_monitor(void)
+{
+	__u32 key = 0;
+	union rv_task_monitor *mon = bpf_map_lookup_elem(&rv_mon_map, &key);
+
+	return &mon->da_mon;
+}
+
+#elif RV_MON_TYPE == RV_MON_PER_OBJ || RV_MON_TYPE == RV_MON_PER_TASK
+
+/*
+ * Both per-task and per-obj have a target and map lookup may be null, share
+ * the same utility functions.
+ * Types and structs must be different not to collide with vmlinux.h .
+ */
+
+#if RV_MON_TYPE == RV_MON_PER_TASK
+typedef struct task_struct *monitor_target_bpf;
+#endif
+
+struct da_monitor_storage_bpf {
+	da_id_type id;
+	monitor_target_bpf target;
+	union rv_task_monitor rv;
+};
+
+#if RV_MON_TYPE == RV_MON_PER_TASK
+/*
+ * BPF Per-Task monitor - uses BPF task storage map
+ */
+
+#define da_get_monitor(tsk) da_get_monitor_bpf(BPF_CORE_READ(tsk, pid), tsk)
+#define da_handle_event(tsk, event) \
+	da_handle_event_bpf(BPF_CORE_READ(tsk, pid), tsk, event)
+#define da_handle_start_event(tsk, event) \
+	da_handle_start_event_bpf(BPF_CORE_READ(tsk, pid), tsk, event)
+#define da_handle_start_run_event(tsk, event) \
+	da_handle_start_run_event_bpf(BPF_CORE_READ(tsk, pid), tsk, event)
+
+/*
+ * Task storage is created on task creation or monitor initialisation.
+ * Other contexts may not allow allocation.
+ */
+#define da_create_storage(id, t, mon) mon
+
+#define da_extra_init da_create_idle_task_storage
+
+struct {
+	__uint(type, BPF_MAP_TYPE_TASK_STORAGE);
+	__uint(map_flags, BPF_F_NO_PREALLOC);
+	__type(key, int);
+	__type(value, struct da_monitor_storage_bpf);
+} rv_mon_map SEC(".maps");
+
+static inline struct da_monitor *da_get_monitor_bpf(da_id_type id, monitor_target_bpf target)
+{
+	struct da_monitor_storage_bpf *storage;
+
+	storage = bpf_task_storage_get(&rv_mon_map, target, 0, 0);
+	return storage ? &storage->rv.da_mon : NULL;
+}
+
+static inline void da_create_task_storage(struct task_struct *task)
+{
+	struct da_monitor_storage_bpf *storage;
+
+	storage = bpf_task_storage_get(&rv_mon_map, task, 0,
+				       BPF_LOCAL_STORAGE_GET_F_CREATE);
+	if (!storage)
+		return;
+
+	storage->target = task;
+	storage->id = BPF_CORE_READ(task, pid);
+
+}
+
+SEC("tp_btf/task_newtask")
+int BPF_PROG(handle_task_init, struct task_struct *task, u64 clone_flags)
+{
+	da_create_task_storage(task);
+	return 0;
+}
+
+SEC("iter/task")
+int init_task(struct bpf_iter__task *ctx)
+{
+	struct task_struct *task = ctx->task;
+
+	if (!task)
+		return 0;
+
+	da_create_task_storage(task);
+	return 0;
+}
+
+extern const struct rq runqueues __ksym;
+extern int CONFIG_NR_CPUS __kconfig __weak;
+
+/*
+ * Iterate over possible CPUs to find idle tasks, those are not present in the
+ * task iterator but some monitors use them.
+ */
+static inline void da_create_idle_task_storage(void)
+{
+	for (int cpu = 0; cpu < CONFIG_NR_CPUS; cpu++) {
+		struct rq *rq = bpf_per_cpu_ptr(&runqueues, cpu);
+
+		if (rq && rq->idle)
+			da_create_task_storage(rq->idle);
+	}
+}
+
+#elif RV_MON_TYPE == RV_MON_PER_OBJ
+/*
+ * BPF Per-Object monitor - uses BPF hash map
+ */
+
+#define da_get_monitor da_get_monitor_bpf
+#define da_handle_event da_handle_event_bpf
+#define da_handle_start_event da_handle_start_event_bpf
+#define da_handle_start_run_event da_handle_start_run_event_bpf
+
+struct {
+	__uint(type, BPF_MAP_TYPE_HASH);
+	__uint(max_entries, 10240);
+	__type(key, da_id_type);
+	__type(value, struct da_monitor_storage_bpf);
+} rv_mon_map SEC(".maps");
+
+static inline struct da_monitor *da_get_monitor_bpf(da_id_type id, monitor_target_bpf target)
+{
+	struct da_monitor_storage_bpf *storage;
+
+	storage = bpf_map_lookup_elem(&rv_mon_map, &id);
+	return storage ? &storage->rv.da_mon : NULL;
+}
+
+static inline struct da_monitor *da_create_storage(da_id_type id,
+						   monitor_target_bpf target,
+						   struct da_monitor *da_mon)
+{
+	struct da_monitor_storage_bpf new_storage = {
+		.id = id,
+		.target = target,
+	};
+
+	if (da_mon)
+		return da_mon;
+
+	bpf_map_update_elem(&rv_mon_map, &id, &new_storage, BPF_NOEXIST);
+	return da_get_monitor_bpf(id, target);
+}
+
+static inline void da_destroy_storage(da_id_type id)
+{
+	bpf_map_delete_elem(&rv_mon_map, &id);
+}
+
+#endif /* RV_MON_PER_TASK */
+
+static inline da_id_type da_get_id(struct da_monitor *da_mon)
+{
+	return container_of(da_mon, struct da_monitor_storage_bpf, rv.da_mon)->id;
+}
+
+static inline monitor_target_bpf da_get_target(struct da_monitor *da_mon)
+{
+	return container_of(da_mon, struct da_monitor_storage_bpf, rv.da_mon)->target;
+}
+
+/*
+ * Handle event for per object and per task
+ */
+
+static inline void __da_handle_event(struct da_monitor *da_mon,
+				     enum events event, da_id_type id);
+static inline bool __da_handle_start_event(struct da_monitor *da_mon,
+					   enum events event, da_id_type id);
+static inline bool __da_handle_start_run_event(struct da_monitor *da_mon,
+					       enum events event, da_id_type id);
+
+/*
+ * da_handle_event - handle an event
+ */
+static inline void da_handle_event_bpf(da_id_type id, monitor_target_bpf target, enum events event)
+{
+	struct da_monitor *da_mon;
+
+	da_mon = da_get_monitor_bpf(id, target);
+	if (likely(da_mon))
+		__da_handle_event(da_mon, event, id);
+}
+
+/*
+ * da_handle_start_event - start monitoring or handle event
+ *
+ * This function is used to notify the monitor that the system is returning
+ * to the initial state, so the monitor can start monitoring in the next event.
+ * Thus:
+ *
+ * If the monitor already started, handle the event.
+ * If the monitor did not start yet, start the monitor but skip the event.
+ */
+static inline bool da_handle_start_event_bpf(da_id_type id, monitor_target_bpf target,
+					 enum events event)
+{
+	struct da_monitor *da_mon;
+
+	da_mon = da_get_monitor_bpf(id, target);
+	da_mon = da_create_storage(id, target, da_mon);
+	if (unlikely(!da_mon))
+		return 0;
+	return __da_handle_start_event(da_mon, event, id);
+}
+
+/*
+ * da_handle_start_run_event - start monitoring and handle event
+ *
+ * This function is used to notify the monitor that the system is in the
+ * initial state, so the monitor can start monitoring and handling event.
+ */
+static inline bool da_handle_start_run_event_bpf(da_id_type id, monitor_target_bpf target,
+					     enum events event)
+{
+	struct da_monitor *da_mon;
+
+	da_mon = da_get_monitor_bpf(id, target);
+	da_mon = da_create_storage(id, target, da_mon);
+	if (unlikely(!da_mon))
+		return 0;
+	return __da_handle_start_run_event(da_mon, event, id);
+}
+
+static inline void da_reset_bpf(da_id_type id, monitor_target_bpf target)
+{
+	struct da_monitor *da_mon;
+
+	da_mon = da_get_monitor_bpf(id, target);
+	if (likely(da_mon))
+		da_monitor_reset(da_mon);
+}
+
+#endif /* RV_MON_TYPE */
+
+extern int bpf_rv_event_monitor(const char *mon, const int *id__nullable,
+				const char *msg, u32 msg__sz) __ksym;
+extern int bpf_rv_error_monitor(const char *mon, const int *id__nullable,
+				const char *msg, u32 msg__sz) __ksym;
+
+#if RV_MON_TYPE == RV_MON_GLOBAL || RV_MON_TYPE == RV_MON_PER_CPU
+/*
+ * Trace events for implicit monitors. Implicit monitor is the one which the
+ * handler does not need to specify which da_monitor to manipulate. Examples
+ * of implicit monitor are the per_cpu or the global ones.
+ */
+
+static inline void da_trace_event(struct da_monitor *da_mon,
+				  const char *curr_state, const char *event,
+				  const char *next_state, bool is_final,
+				  da_id_type id)
+{
+	char msg[DA_TRACE_MSG_MAX];
+
+	if (trace_level < RV_TRACE_EVENT)
+		return;
+
+	BPF_SNPRINTF(msg, sizeof(msg), "%s x %s -> %s%s",
+		curr_state, event, next_state, is_final ? " (final)" : "");
+	bpf_rv_event_monitor(__stringify(MONITOR_NAME), NULL, msg, sizeof(msg));
+}
+
+static inline void da_trace_error(struct da_monitor *da_mon,
+				  const char *curr_state, const char *event,
+				  da_id_type id)
+{
+	char msg[DA_TRACE_MSG_MAX];
+
+	if (trace_level < RV_TRACE_ERROR)
+		return;
+
+	BPF_SNPRINTF(msg, sizeof(msg), "event %s not expected in the state %s",
+		 event, curr_state);
+	bpf_rv_error_monitor(__stringify(MONITOR_NAME), NULL, msg, sizeof(msg));
+}
+
+#elif RV_MON_TYPE == RV_MON_PER_TASK || RV_MON_TYPE == RV_MON_PER_OBJ
+/*
+ * Trace events for per_task/per_object monitors, report the target id.
+ */
+
+static inline void da_trace_event(struct da_monitor *da_mon,
+				  const char *curr_state, const char *event,
+				  const char *next_state, bool is_final,
+				  da_id_type id)
+{
+	char msg[DA_TRACE_MSG_MAX];
+
+	if (trace_level < RV_TRACE_EVENT)
+		return;
+
+	BPF_SNPRINTF(msg, sizeof(msg), "%d: %s x %s -> %s%s", id,
+		curr_state, event, next_state, is_final ? " (final)" : "");
+	bpf_rv_event_monitor(__stringify(MONITOR_NAME), &id, msg, sizeof(msg));
+}
+
+static inline void da_trace_error(struct da_monitor *da_mon,
+				  const char *curr_state, const char *event,
+				  da_id_type id)
+{
+	char msg[DA_TRACE_MSG_MAX];
+
+	if (trace_level < RV_TRACE_ERROR)
+		return;
+
+	BPF_SNPRINTF(msg, sizeof(msg), "%d: event %s not expected in the state %s",
+		 id, event, curr_state);
+	bpf_rv_error_monitor(__stringify(MONITOR_NAME), &id, msg, sizeof(msg));
+}
+#endif /* RV_MON_TYPE */
+
+/* Some monitors require extra initialisation. */
+#ifndef da_extra_init
+#define da_extra_init()
+#endif
+
+/*
+ * enable_monitor - BPF program to be called manually after all handlers are attached
+ */
+SEC("syscall")
+int enable_monitor(void *ctx)
+{
+	da_extra_init();
+	rv_this.enabled = 1;
+	return 0;
+}
+
+#endif // _DA_MONITOR_BPF_H
