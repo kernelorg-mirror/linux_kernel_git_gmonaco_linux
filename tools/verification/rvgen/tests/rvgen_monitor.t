@@ -49,15 +49,16 @@ check_and_compare_folder "LTL per_task with parent and description (default name
 
 # Error handling tests
 check "missing required spec argument" \
-	"$RVGEN monitor -c da -t per_cpu" 1 "expected str" "Traceback (most recent call last)"
+	"$RVGEN monitor -c da -t per_cpu" 2 \
+	"the following arguments are required: -s/--spec" "Traceback (most recent call last)"
 
 check "missing required monitor type" \
-	"$RVGEN monitor -c da -s tests/specs/test_da.dot" 1 \
-	"'NoneType' object has no attribute 'upper'" # "Traceback (most recent call last)"
+	"$RVGEN monitor -c da -s tests/specs/test_da.dot" 2 \
+	"the following arguments are required: -t/--monitor_type" "Traceback (most recent call last)"
 
 check "missing required monitor class" \
-	"$RVGEN monitor -s tests/specs/test_da.dot -t per_cpu" 1 \
-	"Unknown monitor class" "Traceback (most recent call last)"
+	"$RVGEN monitor -s tests/specs/test_da.dot -t per_cpu" 2 \
+	"the following arguments are required: -c/--class" "Traceback (most recent call last)"
 
 check "invalid monitor class" \
 	"$RVGEN monitor -c invalid -s tests/specs/test_da.dot -t per_cpu" 1 \
@@ -65,7 +66,7 @@ check "invalid monitor class" \
 
 check "missing dot file" \
 	"$RVGEN monitor -c da -s tests/specs/nonexistent.dot -t per_cpu" 1 \
-	"Cannot open the file" "Traceback (most recent call last)"
+	"No such file or directory" "Traceback (most recent call last)"
 
 check "missing ltl file" \
 	"$RVGEN monitor -c ltl -s tests/specs/nonexistent.ltl -t per_task" 1 \
@@ -73,7 +74,7 @@ check "missing ltl file" \
 
 check "invalid dot file syntax" \
 	"$RVGEN monitor -c da -s tests/specs/test_invalid.dot -t per_cpu" 1 \
-	"cannot access local variable 'initial_state'" "Traceback (most recent call last)"
+	"Not a valid .dot format" "Traceback (most recent call last)"
 
 check "invalid ha file syntax" \
 	"$RVGEN monitor -c ha -s tests/specs/test_invalid_ha.dot -t per_obj" 1 \
