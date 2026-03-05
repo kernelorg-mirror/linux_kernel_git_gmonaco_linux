@@ -33,7 +33,15 @@ check_if_exists "run the monitor as verbose" \
 	"my pid is \$pid" "\(event\|error\)"
 
 check_if_exists "run the monitor with a reactor" \
-	"$RV mon wwnr -r printk & sleep .5 && cat $RVDIR/monitors/wwnr/reactors" \
+	"$RV mon wwnr -r printk & sleep .5 && cat $RVDIR/monitors/wwnr/reactors && wait" \
+	"$RVDIR/monitors/wwnr/reactors" "\[printk\]"
+
+check_if_exists "run a nested monitor with a reactor" \
+	"$RV mon snroc -r printk & sleep .5 && cat $RVDIR/monitors/sched/snroc/reactors && wait" \
+	"$RVDIR/monitors/wwnr/reactors" "\[printk\]"
+
+check_if_exists "run an explicitly nested monitor with a reactor" \
+	"$RV mon sched:sssw -r printk & sleep .5 && cat $RVDIR/monitors/sched/sssw/reactors && wait" \
 	"$RVDIR/monitors/wwnr/reactors" "\[printk\]"
 
 # Regexes for the trace
