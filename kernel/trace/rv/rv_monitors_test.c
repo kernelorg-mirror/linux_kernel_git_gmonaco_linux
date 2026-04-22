@@ -83,6 +83,7 @@ static struct kunit_case rv_trigger_test_cases[] = {
 	KUNIT_CASE(rv_test_nomiss),
 	KUNIT_CASE(rv_test_pagefault),
 	KUNIT_CASE(rv_test_sleep),
+	KUNIT_CASE(rv_test_throttle),
 	{}
 };
 
