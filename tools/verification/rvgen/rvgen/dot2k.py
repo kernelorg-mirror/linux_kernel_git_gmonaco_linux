@@ -225,6 +225,7 @@ class ha2k(dot2k):
         if self.env_types.get(env.rstrip(f"_{self.name}")) == "j":
             clock_type = "jiffy"
 
+        # TODO will need to remove the last parameter here
         return f"return ha_check_invariant_{clock_type}(ha_mon, {env}, time_ns)"
 
     def __start_to_conv(self, constr: str) -> str:
@@ -596,8 +597,10 @@ f"""static bool ha_verify_constraint(struct ha_monitor *ha_mon,
 
     def _fill_timer_type(self) -> list:
         if self.invariants:
-            return [
+            if {"ns", "us", "ms", "s"}.intersection(self.env_types.values()):
+                return [
                     "/* XXX: If the monitor has several instances, consider HA_TIMER_WHEEL */",
                     "#define HA_TIMER_TYPE HA_TIMER_HRTIMER"
-                    ]
+                ]
+            return ["#define HA_TIMER_TYPE HA_TIMER_WHEEL"]
         return []
