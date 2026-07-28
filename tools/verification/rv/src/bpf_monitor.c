@@ -400,6 +400,12 @@ static int bpf_enable_tracing(struct bpf_object *obj, struct bpf_monitor_ctx *ct
 	return 0;
 }
 
+#ifdef __x86_64__
+#define X86_64 'y'
+#else
+#define X86_64 'n'
+#endif
+
 /*
  * open_bpf_monitor - open and load a BPF monitor object from a file path
  *
@@ -416,8 +422,8 @@ static struct bpf_object *open_bpf_monitor(const char *path, struct bpf_monitor_
 		return NULL;
 	}
 	/* Define statically what is known, Kconfig may not be available. */
-	snprintf(kconfig, sizeof(kconfig), "CONFIG_NR_CPUS=%d\n",
-		 nproc);
+	snprintf(kconfig, sizeof(kconfig), "CONFIG_NR_CPUS=%d\nCONFIG_X86_64=%c\n",
+		 nproc, X86_64);
 
 	LIBBPF_OPTS(bpf_object_open_opts, opts,
 		.object_name = ctx->monitor_name,
