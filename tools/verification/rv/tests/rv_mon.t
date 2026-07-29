@@ -6,6 +6,7 @@ test_begin
 set_timeout 30s
 
 RVDIR=/sys/kernel/tracing/rv/
+RVTOOL=$(dirname "$RV")
 
 # Help and basic tests
 check "verify mon subcommand help" \
@@ -29,7 +30,28 @@ check "monitor name is substring of another monitor" \
 check "already enabled monitor returns error" \
 	"echo 1 > $RVDIR/monitors/wwnr/enable; $RV mon wwnr" 1 \
 	"monitor wwnr (in-kernel) is already enabled"
-echo 0 > $RVDIR/monitors/wwnr/enable
+[ -n "$TEST_COUNT" ] && echo 0 > $RVDIR/monitors/wwnr/enable
+
+fi
+
+if [ -f "$RVTOOL/bpf_monitors/nohz.o" ]; then
+
+check "invalid BPF reactor name" \
+	"$RV mon nohz -r invalid" 1 "failed to set invalid reactor, is it available?"
+
+fi
+
+if [ -f "$RVTOOL/bpf_monitors/tqueue.o" ]; then
+
+[ -n "$TEST_COUNT" ] && { $RV mon tqueue & disown ; tmp=$! ; sleep 1 ; }
+check "already enabled BPF monitor returns error" \
+	"$RV mon tqueue" 1 "monitor tqueue (BPF) is already enabled"
+
+[ -n "$TEST_COUNT" ] && { kill -9 "$tmp" && sleep 1 ; }
+set_expected_timeout 1s
+
+check "crashed BPF monitor does not leak resources" \
+	"$RV mon tqueue" 0 "" "monitor tqueue (BPF) is already enabled"
 
 fi
 
@@ -39,6 +61,12 @@ set_expected_timeout 2s
 # Run monitors with different configurations
 check_if_exists "run the monitor without parameters" \
 	"$RV mon wwnr" "$RVDIR/monitors/wwnr" "" "."
+
+check_if_exists "run a BPF monitor without parameters" \
+	"$RV mon nohz" "$RVTOOL/bpf_monitors/nohz.o" "" "."
+
+check_if_exists "run a per-task BPF monitor without parameters" \
+	"$RV mon tqueue" "$RVTOOL/bpf_monitors/tqueue.o" "" "."
 
 check_if_exists "run the monitor as verbose" \
 	"$RV mon wwnr -v" "$RVDIR/monitors/wwnr" \
@@ -60,21 +88,32 @@ check_if_exists "run an explicitly nested monitor with a reactor" \
 	"$RV mon sched:sssw -r printk & sleep .5 && cat $RVDIR/monitors/sched/sssw/reactors && wait" \
 	"$RVDIR/monitors/sched/sssw/reactors" "\[printk\]"
 
+TRACE=/sys/kernel/tracing/trace
+
 check_if_exists "run container monitor" \
 	"$RV mon sched & sleep .5 && cat $RVDIR/monitors/sched/{sssw,sco}/enable && wait" \
 	"$RVDIR/monitors/sched" "1" "0" "^1$"
 
 # Regexes for the trace
 header="^[[:space:]]\+\(\([][A-Z_x<>-]\+\||\)[[:space:]]*\)\+$"
-type="\(event\|error\)[[:space:]]\+"
+mon="[a-z_]\+"
+type="\(event\|error\)_$mon"
 genpid="[0-9]\+[[:space:]]\+"
 selfpid="\$pid[[:space:]]\+"
 cpu="\[[0-9]\{3\}\][[:space:]]\+"
 state="[a-z_]\+ "
-trace_task="${genpid}${cpu}${type}${genpid}${state}"
-trace_task_self="${genpid}${cpu}${type}${selfpid}${state}"
-trace_cpu="${genpid}${cpu}${type}${state}"
-trace_cpu_self="${selfpid}${cpu}${type}${state}"
+id="[0-9]\+"
+selfid="\$pid"
+# BPF monitors report via the common rv:event_monitor/rv:error_monitor
+# events, which add a "<mon>: " prefix to the message.
+trace_task="${genpid}${cpu}${type}: ${id}: ${state}"
+trace_task_self="${genpid}${cpu}${type}: ${selfid}: ${state}"
+trace_cpu="${genpid}${cpu}${type}: ${state}"
+trace_cpu_self="${selfpid}${cpu}${type}: ${state}"
+trace_task_bpf="${genpid}${cpu}${type}: ${mon}: ${id}: ${state}"
+trace_task_bpf_self="${genpid}${cpu}${type}: ${mon}: ${selfid}: ${state}"
+trace_cpu_bpf="${genpid}${cpu}${type}: ${mon}: ${state}"
+trace_cpu_bpf_self="${selfpid}${cpu}${type}: ${mon}: ${state}"
 
 check_if_exists "run per-task monitor with tracing" \
 	"$RV mon sssw -t" "$RVDIR/monitors/sched/sssw" \
@@ -91,5 +130,34 @@ check_if_exists "run per-cpu monitor with tracing" \
 check_if_exists "run per-cpu monitor tracing also self" \
 	"$RV mon sco -t -s" "$RVDIR/monitors/sched/sco" \
 	"$trace_cpu_self" "" "\($header\|$trace_cpu\)"
+
+check_if_exists "run per-task BPF monitor with tracing" \
+	"$RV mon tqueue -t" "$RVTOOL/bpf_monitors/tqueue.o" \
+	"$header" "$trace_task_bpf_self" "\($header\|$trace_task_bpf\)"
+
+check_if_exists "run per-task BPF monitor tracing also self" \
+	"$RV mon tqueue -t -s" "$RVTOOL/bpf_monitors/tqueue.o" \
+	"$trace_task_bpf_self" "" "\($header\|$trace_task_bpf\)"
+
+check_if_exists "run per-cpu BPF monitor with tracing" \
+	"$RV mon nohz -t" "$RVTOOL/bpf_monitors/nohz.o" \
+	"$header" "$trace_cpu_bpf_self" "\($header\|$trace_cpu_bpf\)"
+
+# This is unstable, we may never see events from self
+#check_if_exists "run per-cpu BPF monitor tracing also self" \
+#	"$RV mon nohz -t -s" "$RVTOOL/bpf_monitors/nohz.o" \
+#	"$trace_cpu_bpf_self" "" "\($header\|$trace_cpu_bpf\)"
+
+check_if_exists "run per-task monitor tracing only errors" \
+	"$RV mon sssw -t -E" "$RVDIR/monitors/sched/sssw" \
+	"$header" "event_"
+
+check_if_exists "run per-task BPF monitor tracing only errors" \
+	"$RV mon tqueue -t -E" "$RVTOOL/bpf_monitors/tqueue.o" \
+	"$header" "event_monitor"
+
+check_if_exists "run per-cpu BPF monitor tracing only errors" \
+	"$RV mon nohz -t -E" "$RVTOOL/bpf_monitors/nohz.o" \
+	"error_monitor" "event_monitor"
 
 test_end
