@@ -17,7 +17,6 @@
 #include "bpf_atomic.h"
 
 /* BPF monitors don't support these */
-#define rv_react(...) do {} while (0)
 #define trace_rv_retries_error(...) do {} while (0)
 #define pr_warn(fmt, ...) bpf_printk(fmt, ##__VA_ARGS__)
 #define rv_monitoring_on() 1
@@ -75,8 +74,24 @@ static const struct rv_trace_entry __used *_btf_trace;
 
 static inline void da_monitor_reset(struct da_monitor *da_mon);
 
-/* BPF monitors do not use reactors */
-static inline void react(enum states curr_state, enum events event) { }
+__noinline __weak __hidden int bpf_rv_react(const char *fmt, u32 fmt_size,
+					    u64 *data, u32 data_len)
+{
+	return 0;
+}
+
+#define rv_react(mon, fmt, args...)						\
+	({									\
+		static const char ___fmt[] = fmt;				\
+		unsigned long long ___param[___bpf_narg(args)];			\
+										\
+		_Pragma("GCC diagnostic push")					\
+		_Pragma("GCC diagnostic ignored	\"-Wint-conversion\"")		\
+		___bpf_fill(___param, args);					\
+		_Pragma("GCC diagnostic pop")					\
+										\
+		bpf_rv_react(___fmt, sizeof(___fmt), ___param, sizeof(___param));\
+	})
 
 /*
  * BPF monitor implementations
