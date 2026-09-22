@@ -5,6 +5,7 @@
  * Copyright (C) 2026 Red Hat Inc, Gabriele Monaco <gmonaco@redhat.com>
  */
 
+#define _GNU_SOURCE
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -14,6 +15,7 @@
 #include <libgen.h>
 #include <errno.h>
 #include <inttypes.h>
+#include <sys/mman.h>
 #include <bpf/libbpf.h>
 #include <bpf/bpf.h>
 #include <bpf/btf.h>
@@ -36,6 +38,7 @@ static char bpf_base_paths[][MAX_PATH] = {
 #define MAX_ENUMS 64
 #define MAX_LINKS 16
 #define PROG_ENABLE_MON "enable_monitor"
+#define BPF_REACTOR "bpf_rv_react"
 #define RV_TRACE_STRUCT "rv_trace_entry"
 #define RV_TRACE_TYPE_ENUM "rv_trace_type"
 
@@ -674,12 +677,31 @@ static struct ring_buffer *bpf_setup_ring_buffer(struct bpf_object *obj,
 	return rb;
 }
 
+static void list_reactor_action(const char *name, struct bpf_object *obj)
+{
+	const struct btf *btf = bpf_object__btf(obj);
+
+	if (btf__find_by_name_kind(btf, BPF_REACTOR, BTF_KIND_FUNC) >= 0)
+		fprintf(stderr, "%s ", name);
+}
+
+/*
+ * list_reactors_from_path - list reactors from a specific base path
+ */
+static void list_reactors_from_path(const char *base_path)
+{
+	bpf_object_iterate_path(base_path, "bpf_reactors", list_reactor_action);
+}
+
 /*
  * bpf_usage_print_reactors - print available BPF reactors
  */
 void bpf_usage_print_reactors(void)
 {
-	fprintf(stderr, "  available BPF reactors: nop\n");
+	fprintf(stderr, "  available BPF reactors: nop ");
+	for (int i = 0; bpf_base_paths[i][0]; i++)
+		list_reactors_from_path(bpf_base_paths[i]);
+	fprintf(stderr, "\n");
 }
 
 /*
@@ -844,6 +866,56 @@ static int attach_bpf_handlers(const char *monitor_name, struct bpf_object *obj,
 	return enable_mon_fd;
 }
 
+static int find_bpf_reactor(const char *reactor_name, char *path_out, size_t path_len)
+{
+	return find_bpf_file("bpf_reactors", reactor_name, path_out, path_len);
+}
+
+static char *link_bpf_reactor(char *monitor_buf, size_t *monitor_sz, const char *reactor_path)
+{
+	struct bpf_linker *linker = NULL;
+	int memfd = -1;
+	int err = 0;
+	char *buf = NULL;
+
+	memfd = memfd_create("linked_bpf", 0);
+	if (memfd < 0) {
+		err_msg("bpf: failed to create memfd: %s\n", strerror(errno));
+		return NULL;
+	}
+
+	linker = bpf_linker__new_fd(memfd, NULL);
+	if (!linker) {
+		err_msg("bpf: failed to create BPF linker\n");
+		goto out;
+	}
+
+	err = bpf_linker__add_buf(linker, monitor_buf, *monitor_sz, NULL);
+	if (err) {
+		err_msg("bpf: failed to add monitor buffer to linker: %s\n", strerror(-err));
+		goto out;
+	}
+
+	err = bpf_linker__add_file(linker, reactor_path, NULL);
+	if (err) {
+		err_msg("bpf: failed to add reactor file to linker: %s\n", strerror(-err));
+		goto out;
+	}
+
+	err = bpf_linker__finalize(linker);
+	if (err) {
+		err_msg("bpf: failed to finalize BPF linker: %s\n", strerror(-err));
+		goto out;
+	}
+
+	buf = fd_to_buf(memfd, monitor_sz);
+
+out:
+	bpf_linker__free(linker);
+	close(memfd);
+	return buf;
+}
+
 /*
  * bpf_run_monitor - load and run a BPF monitor
  *
@@ -885,6 +957,24 @@ int bpf_run_monitor(char *monitor_name, int argc, char **argv)
 	if (!monitor_buf) {
 		err_msg("bpf: failed to read monitor file '%s'\n", monitor_path);
 		goto cleanup;
+	}
+
+	if (config.reactor && strcmp(config.reactor, "nop")) {
+		char reactor_path[MAX_PATH];
+		char *linked_buf;
+
+		if (!find_bpf_reactor(config.reactor, reactor_path, sizeof(reactor_path))) {
+			mon_usage(1, monitor_name,
+				  "bpf: failed to set %s reactor, is it available?",
+				  config.reactor);
+			goto cleanup;
+		}
+
+		linked_buf = link_bpf_reactor(monitor_buf, &monitor_sz, reactor_path);
+		if (!linked_buf)
+			goto cleanup;
+		free(monitor_buf);
+		monitor_buf = linked_buf;
 	}
 
 	obj = open_bpf_monitor(monitor_buf, monitor_sz, &ctx);
