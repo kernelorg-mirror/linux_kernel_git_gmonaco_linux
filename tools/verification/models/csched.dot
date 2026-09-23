@@ -1,0 +1,15 @@
+digraph state_automaton {
+	{node [shape = circle] "sched"};
+	{node [shape = plaintext, style=invis, label=""] "__init_out"};
+	{node [shape = doublecircle] "out"};
+	{node [shape = circle] "out"};
+	"__init_out" -> "out";
+	"sched" [label = "sched"];
+	"sched" -> "out" [ label = "sched_exit" ];
+	"out" [label = "out"];
+	"out" -> "sched" [ label = "sched_entry" ];
+	{ rank = min ;
+		"__init_out";
+		"out";
+	}
+}

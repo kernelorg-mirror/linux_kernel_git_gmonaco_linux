@@ -1,0 +1,9 @@
+# SPDX-License-Identifier: GPL-2.0-only
+#
+config RV_MON_GSCHED_KERN
+	depends on RV
+	# XXX: add dependencies if there
+	select DA_MON_EVENTS_IMPLICIT
+	bool "gsched_kern monitor"
+	help
+	  auto-generated

@@ -84,6 +84,10 @@ source "kernel/trace/rv/monitors/deadline/Kconfig"
 source "kernel/trace/rv/monitors/nomiss/Kconfig"
 # Add new deadline monitors here
 
+source "kernel/trace/rv/monitors/csched_kern/Kconfig"
+source "kernel/trace/rv/monitors/tqueue_kern/Kconfig"
+source "kernel/trace/rv/monitors/gsched_kern/Kconfig"
+source "kernel/trace/rv/monitors/cempty_kern/Kconfig"
 # Add new monitors here
 
 config RV_REACTORS

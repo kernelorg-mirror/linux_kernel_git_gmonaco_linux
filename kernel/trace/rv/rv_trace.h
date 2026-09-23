@@ -62,6 +62,9 @@ DECLARE_EVENT_CLASS(error_da_monitor,
 #include <monitors/scpd/scpd_trace.h>
 #include <monitors/snep/snep_trace.h>
 #include <monitors/sts/sts_trace.h>
+#include <monitors/csched_kern/csched_kern_trace.h>
+#include <monitors/gsched_kern/gsched_kern_trace.h>
+#include <monitors/cempty_kern/cempty_kern_trace.h>
 // Add new monitors based on CONFIG_DA_MON_EVENTS_IMPLICIT here
 
 #ifdef CONFIG_HA_MON_EVENTS_IMPLICIT
@@ -156,6 +159,7 @@ DECLARE_EVENT_CLASS(error_da_monitor_id,
 #include <monitors/snroc/snroc_trace.h>
 #include <monitors/nrp/nrp_trace.h>
 #include <monitors/sssw/sssw_trace.h>
+#include <monitors/tqueue_kern/tqueue_kern_trace.h>
 // Add new monitors based on CONFIG_DA_MON_EVENTS_ID here
 
 #ifdef CONFIG_HA_MON_EVENTS_ID
