@@ -23,8 +23,8 @@ enum events_wwnr {
 };
 
 struct automaton_wwnr {
-	char *state_names[state_max_wwnr];
-	char *event_names[event_max_wwnr];
+	const char *state_names[state_max_wwnr];
+	const char *event_names[event_max_wwnr];
 	unsigned char function[state_max_wwnr][event_max_wwnr];
 	unsigned char initial_state;
 	bool final_states[state_max_wwnr];

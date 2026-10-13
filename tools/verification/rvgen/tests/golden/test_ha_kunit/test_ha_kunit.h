@@ -36,9 +36,9 @@ _Static_assert(env_max_stored_test_ha_kunit <= MAX_HA_ENV_LEN, "Not enough slots
 #define HA_CLK_NS
 
 struct automaton_test_ha_kunit {
-	char *state_names[state_max_test_ha_kunit];
-	char *event_names[event_max_test_ha_kunit];
-	char *env_names[env_max_test_ha_kunit];
+	const char *state_names[state_max_test_ha_kunit];
+	const char *event_names[event_max_test_ha_kunit];
+	const char *env_names[env_max_test_ha_kunit];
 	unsigned char function[state_max_test_ha_kunit][event_max_test_ha_kunit];
 	unsigned char initial_state;
 	bool final_states[state_max_test_ha_kunit];

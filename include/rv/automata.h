@@ -22,7 +22,7 @@
 /*
  * model_get_state_name - return the (string) name of the given state
  */
-static char *model_get_state_name(enum states state)
+static const char *model_get_state_name(enum states state)
 {
 	if ((state < 0) || (state >= STATE_MAX))
 		return "INVALID";
@@ -33,7 +33,7 @@ static char *model_get_state_name(enum states state)
 /*
  * model_get_event_name - return the (string) name of the given event
  */
-static char *model_get_event_name(enum events event)
+static const char *model_get_event_name(enum events event)
 {
 	if ((event < 0) || (event >= EVENT_MAX))
 		return "INVALID";

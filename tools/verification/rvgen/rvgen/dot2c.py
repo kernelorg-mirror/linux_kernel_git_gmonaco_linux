@@ -111,10 +111,10 @@ class Dot2c(Automata):
         min_type = self.get_minimun_type()
         buff = []
         buff.append(f"struct {self.struct_automaton_def} {{")
-        buff.append(f"\tchar *state_names[state_max{self.enum_suffix}];")
-        buff.append(f"\tchar *event_names[event_max{self.enum_suffix}];")
+        buff.append(f"\tconst char *state_names[state_max{self.enum_suffix}];")
+        buff.append(f"\tconst char *event_names[event_max{self.enum_suffix}];")
         if self.is_hybrid_automata():
-            buff.append(f"\tchar *env_names[env_max{self.enum_suffix}];")
+            buff.append(f"\tconst char *env_names[env_max{self.enum_suffix}];")
         buff.append(f"\t{min_type} function[state_max{self.enum_suffix}][event_max{self.enum_suffix}];")
         buff.append(f"\t{min_type} initial_state;")
         buff.append(f"\tbool final_states[state_max{self.enum_suffix}];")

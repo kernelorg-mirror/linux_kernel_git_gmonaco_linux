@@ -24,8 +24,8 @@ enum events_snep {
 };
 
 struct automaton_snep {
-	char *state_names[state_max_snep];
-	char *event_names[event_max_snep];
+	const char *state_names[state_max_snep];
+	const char *event_names[event_max_snep];
 	unsigned char function[state_max_snep][event_max_snep];
 	unsigned char initial_state;
 	bool final_states[state_max_snep];

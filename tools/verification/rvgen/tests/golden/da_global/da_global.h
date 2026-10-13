@@ -22,8 +22,8 @@ enum events_da_global {
 };
 
 struct automaton_da_global {
-	char *state_names[state_max_da_global];
-	char *event_names[event_max_da_global];
+	const char *state_names[state_max_da_global];
+	const char *event_names[event_max_da_global];
 	unsigned char function[state_max_da_global][event_max_da_global];
 	unsigned char initial_state;
 	bool final_states[state_max_da_global];

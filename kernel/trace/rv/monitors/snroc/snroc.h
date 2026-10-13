@@ -23,8 +23,8 @@ enum events_snroc {
 };
 
 struct automaton_snroc {
-	char *state_names[state_max_snroc];
-	char *event_names[event_max_snroc];
+	const char *state_names[state_max_snroc];
+	const char *event_names[event_max_snroc];
 	unsigned char function[state_max_snroc][event_max_snroc];
 	unsigned char initial_state;
 	bool final_states[state_max_snroc];
