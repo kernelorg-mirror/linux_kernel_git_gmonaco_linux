@@ -24,8 +24,8 @@ enum events_da_pertask_desc {
 };
 
 struct automaton_da_pertask_desc {
-	char *state_names[state_max_da_pertask_desc];
-	char *event_names[event_max_da_pertask_desc];
+	const char *state_names[state_max_da_pertask_desc];
+	const char *event_names[event_max_da_pertask_desc];
 	unsigned char function[state_max_da_pertask_desc][event_max_da_pertask_desc];
 	unsigned char initial_state;
 	bool final_states[state_max_da_pertask_desc];

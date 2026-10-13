@@ -11,7 +11,7 @@
 #ifdef CONFIG_DA_MON_EVENTS_IMPLICIT
 DECLARE_EVENT_CLASS(event_da_monitor,
 
-	TP_PROTO(char *state, char *event, char *next_state, bool final_state),
+	TP_PROTO(const char *state, const char *event, const char *next_state, bool final_state),
 
 	TP_ARGS(state, event, next_state, final_state),
 
@@ -38,7 +38,7 @@ DECLARE_EVENT_CLASS(event_da_monitor,
 
 DECLARE_EVENT_CLASS(error_da_monitor,
 
-	TP_PROTO(char *state, char *event),
+	TP_PROTO(const char *state, const char *event),
 
 	TP_ARGS(state, event),
 
@@ -59,13 +59,13 @@ DECLARE_EVENT_CLASS(error_da_monitor,
 
 #define DEFINE_DA_EVENT(name)						\
 	DEFINE_EVENT(event_da_monitor, name,				\
-		TP_PROTO(char *state, char *event,			\
-			 char *next_state, bool final_state),		\
+		TP_PROTO(const char *state, const char *event,		\
+			 const char *next_state, bool final_state),	\
 		TP_ARGS(state, event, next_state, final_state))
 
 #define DEFINE_DA_ERROR(name)						\
 	DEFINE_EVENT(error_da_monitor, name,				\
-		TP_PROTO(char *state, char *event),			\
+		TP_PROTO(const char *state, const char *event),		\
 		TP_ARGS(state, event))
 
 #include <monitors/wip/wip_trace.h>
@@ -79,7 +79,7 @@ DECLARE_EVENT_CLASS(error_da_monitor,
 /* For simplicity this class is marked as DA although relevant only for HA */
 DECLARE_EVENT_CLASS(error_env_da_monitor,
 
-	TP_PROTO(char *state, char *event, char *env),
+	TP_PROTO(const char *state, const char *event, const char *env),
 
 	TP_ARGS(state, event, env),
 
@@ -103,7 +103,7 @@ DECLARE_EVENT_CLASS(error_env_da_monitor,
 
 #define DEFINE_HA_ERROR_ENV(name)					\
 	DEFINE_EVENT(error_env_da_monitor, name,			\
-		TP_PROTO(char *state, char *event, char *env),		\
+		TP_PROTO(const char *state, const char *event, const char *env), \
 		TP_ARGS(state, event, env))
 
 #include <monitors/opid/opid_trace.h>
@@ -116,7 +116,7 @@ DECLARE_EVENT_CLASS(error_env_da_monitor,
 #ifdef CONFIG_DA_MON_EVENTS_ID
 DECLARE_EVENT_CLASS(event_da_monitor_id,
 
-	TP_PROTO(int id, char *state, char *event, char *next_state, bool final_state),
+	TP_PROTO(int id, const char *state, const char *event, const char *next_state, bool final_state),
 
 	TP_ARGS(id, state, event, next_state, final_state),
 
@@ -146,7 +146,7 @@ DECLARE_EVENT_CLASS(event_da_monitor_id,
 
 DECLARE_EVENT_CLASS(error_da_monitor_id,
 
-	TP_PROTO(int id, char *state, char *event),
+	TP_PROTO(int id, const char *state, const char *event),
 
 	TP_ARGS(id, state, event),
 
@@ -170,13 +170,13 @@ DECLARE_EVENT_CLASS(error_da_monitor_id,
 
 #define DEFINE_DA_EVENT_ID(name)					\
 	DEFINE_EVENT(event_da_monitor_id, name,				\
-		TP_PROTO(int id, char *state, char *event,		\
-			 char *next_state, bool final_state),		\
+		TP_PROTO(int id, const char *state, const char *event,	\
+			 const char *next_state, bool final_state),	\
 		TP_ARGS(id, state, event, next_state, final_state))
 
 #define DEFINE_DA_ERROR_ID(name)					\
 	DEFINE_EVENT(error_da_monitor_id, name,				\
-		TP_PROTO(int id, char *state, char *event),		\
+		TP_PROTO(int id, const char *state, const char *event),	\
 		TP_ARGS(id, state, event))
 
 #include <monitors/wwnr/wwnr_trace.h>
@@ -189,7 +189,7 @@ DECLARE_EVENT_CLASS(error_da_monitor_id,
 /* For simplicity this class is marked as DA although relevant only for HA */
 DECLARE_EVENT_CLASS(error_env_da_monitor_id,
 
-	TP_PROTO(int id, char *state, char *event, char *env),
+	TP_PROTO(int id, const char *state, const char *event, const char *env),
 
 	TP_ARGS(id, state, event, env),
 
@@ -216,7 +216,7 @@ DECLARE_EVENT_CLASS(error_env_da_monitor_id,
 
 #define DEFINE_HA_ERROR_ENV_ID(name)					\
 	DEFINE_EVENT(error_env_da_monitor_id, name,			\
-		TP_PROTO(int id, char *state, char *event, char *env),	\
+		TP_PROTO(int id, const char *state, const char *event, const char *env), \
 		TP_ARGS(id, state, event, env))
 
 #include <monitors/stall/stall_trace.h>
@@ -229,7 +229,7 @@ DECLARE_EVENT_CLASS(error_env_da_monitor_id,
 #ifdef CONFIG_LTL_MON_EVENTS_ID
 DECLARE_EVENT_CLASS(event_ltl_monitor_id,
 
-	TP_PROTO(struct task_struct *task, char *states, char *atoms, char *next),
+	TP_PROTO(struct task_struct *task, const char *states, const char *atoms, const char *next),
 
 	TP_ARGS(task, states, atoms, next),
 
@@ -274,8 +274,8 @@ DECLARE_EVENT_CLASS(error_ltl_monitor_id,
 
 #define DEFINE_LTL_EVENT_ID(name)					\
 	DEFINE_EVENT(event_ltl_monitor_id, name,			\
-		TP_PROTO(struct task_struct *task, char *states,	\
-			 char *atoms, char *next),			\
+		TP_PROTO(struct task_struct *task, const char *states,	\
+			 const char *atoms, const char *next),		\
 		TP_ARGS(task, states, atoms, next))
 
 #define DEFINE_LTL_ERROR_ID(name)					\
@@ -293,7 +293,7 @@ DECLARE_EVENT_CLASS(error_ltl_monitor_id,
 /* Tracepoint useful for monitors development, currenly only used in DA */
 TRACE_EVENT(rv_retries_error,
 
-	TP_PROTO(char *name, char *event),
+	TP_PROTO(const char *name, const char *event),
 
 	TP_ARGS(name, event),
 

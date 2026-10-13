@@ -23,8 +23,8 @@ enum events_sco {
 };
 
 struct automaton_sco {
-	char *state_names[state_max_sco];
-	char *event_names[event_max_sco];
+	const char *state_names[state_max_sco];
+	const char *event_names[event_max_sco];
 	unsigned char function[state_max_sco][event_max_sco];
 	unsigned char initial_state;
 	bool final_states[state_max_sco];

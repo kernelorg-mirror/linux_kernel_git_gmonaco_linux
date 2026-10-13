@@ -23,8 +23,8 @@ enum events_wip {
 };
 
 struct automaton_wip {
-	char *state_names[state_max_wip];
-	char *event_names[event_max_wip];
+	const char *state_names[state_max_wip];
+	const char *event_names[event_max_wip];
 	unsigned char function[state_max_wip][event_max_wip];
 	unsigned char initial_state;
 	bool final_states[state_max_wip];

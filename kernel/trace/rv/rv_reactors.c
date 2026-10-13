@@ -71,7 +71,7 @@
  */
 static LIST_HEAD(rv_reactors_list);
 
-static struct rv_reactor *get_reactor_rdef_by_name(char *name)
+static struct rv_reactor *get_reactor_rdef_by_name(const char *name)
 {
 	struct rv_reactor *r;
 

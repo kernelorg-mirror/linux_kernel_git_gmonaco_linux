@@ -31,8 +31,8 @@ enum events_sssw {
 };
 
 struct automaton_sssw {
-	char *state_names[state_max_sssw];
-	char *event_names[event_max_sssw];
+	const char *state_names[state_max_sssw];
+	const char *event_names[event_max_sssw];
 	unsigned char function[state_max_sssw][event_max_sssw];
 	unsigned char initial_state;
 	bool final_states[state_max_sssw];

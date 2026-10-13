@@ -24,8 +24,8 @@ enum events_scpd {
 };
 
 struct automaton_scpd {
-	char *state_names[state_max_scpd];
-	char *event_names[event_max_scpd];
+	const char *state_names[state_max_scpd];
+	const char *event_names[event_max_scpd];
 	unsigned char function[state_max_scpd][event_max_scpd];
 	unsigned char initial_state;
 	bool final_states[state_max_scpd];

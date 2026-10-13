@@ -22,8 +22,8 @@ enum events_test_da_kunit {
 };
 
 struct automaton_test_da_kunit {
-	char *state_names[state_max_test_da_kunit];
-	char *event_names[event_max_test_da_kunit];
+	const char *state_names[state_max_test_da_kunit];
+	const char *event_names[event_max_test_da_kunit];
 	unsigned char function[state_max_test_da_kunit][event_max_test_da_kunit];
 	unsigned char initial_state;
 	bool final_states[state_max_test_da_kunit];
