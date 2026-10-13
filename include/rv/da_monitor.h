@@ -633,8 +633,8 @@ static inline void da_monitor_destroy(void)
  */
 
 static inline void da_trace_event(struct da_monitor *da_mon,
-				  char *curr_state, char *event,
-				  char *next_state, bool is_final,
+				  const char *curr_state, const char *event,
+				  const char *next_state, bool is_final,
 				  da_id_type id)
 {
 	CONCATENATE(trace_event_, MONITOR_NAME)(curr_state, event, next_state,
@@ -642,7 +642,7 @@ static inline void da_trace_event(struct da_monitor *da_mon,
 }
 
 static inline void da_trace_error(struct da_monitor *da_mon,
-				  char *curr_state, char *event,
+				  const char *curr_state, const char *event,
 				  da_id_type id)
 {
 	CONCATENATE(trace_error_, MONITOR_NAME)(curr_state, event);
@@ -662,8 +662,8 @@ static inline da_id_type da_get_id(struct da_monitor *da_mon)
  */
 
 static inline void da_trace_event(struct da_monitor *da_mon,
-				  char *curr_state, char *event,
-				  char *next_state, bool is_final,
+				  const char *curr_state, const char *event,
+				  const char *next_state, bool is_final,
 				  da_id_type id)
 {
 	CONCATENATE(trace_event_, MONITOR_NAME)(id, curr_state, event,
@@ -671,7 +671,7 @@ static inline void da_trace_event(struct da_monitor *da_mon,
 }
 
 static inline void da_trace_error(struct da_monitor *da_mon,
-				  char *curr_state, char *event,
+				  const char *curr_state, const char *event,
 				  da_id_type id)
 {
 	CONCATENATE(trace_error_, MONITOR_NAME)(id, curr_state, event);

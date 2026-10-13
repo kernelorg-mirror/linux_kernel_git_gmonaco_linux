@@ -36,9 +36,9 @@ _Static_assert(env_max_stored_ha_percpu <= MAX_HA_ENV_LEN, "Not enough slots");
 #define HA_CLK_NS
 
 struct automaton_ha_percpu {
-	char *state_names[state_max_ha_percpu];
-	char *event_names[event_max_ha_percpu];
-	char *env_names[env_max_ha_percpu];
+	const char *state_names[state_max_ha_percpu];
+	const char *event_names[event_max_ha_percpu];
+	const char *env_names[env_max_ha_percpu];
 	unsigned char function[state_max_ha_percpu][event_max_ha_percpu];
 	unsigned char initial_state;
 	bool final_states[state_max_ha_percpu];

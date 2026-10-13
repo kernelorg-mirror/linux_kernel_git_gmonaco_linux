@@ -87,7 +87,7 @@ _Static_assert(offsetof(struct ha_monitor, da_mon) == 0,
  * environment constraint is false. This function can be called also with no
  * event from a timer (state constraints only).
  */
-static void ha_react(enum states curr_state, enum events event, char *env)
+static void ha_react(enum states curr_state, enum events event, const char *env)
 {
 	rv_react(&rv_this,
 		 "rv: monitor %s does not allow event %s on state %s with env %s\n",
@@ -98,13 +98,13 @@ static void ha_react(enum states curr_state, enum events event, char *env)
 
 #else /* CONFIG_RV_REACTOR */
 
-static void ha_react(enum states curr_state, enum events event, char *env) { }
+static void ha_react(enum states curr_state, enum events event, const char *env) { }
 #endif
 
 /*
  * model_get_state_name - return the (string) name of the given state
  */
-static char *model_get_env_name(enum envs env)
+static const char *model_get_env_name(enum envs env)
 {
 	if ((env < 0) || (env >= ENV_MAX))
 		return "INVALID";
@@ -227,7 +227,7 @@ static inline void ha_get_env_string(struct seq_buf *s,
 
 #if RV_MON_TYPE == RV_MON_GLOBAL || RV_MON_TYPE == RV_MON_PER_CPU
 static inline void ha_trace_error_env(struct ha_monitor *ha_mon,
-				      char *curr_state, char *event, char *env,
+				      const char *curr_state, const char *event, const char *env,
 				      da_id_type id)
 {
 	CONCATENATE(trace_error_env_, MONITOR_NAME)(curr_state, event, env);
@@ -237,7 +237,7 @@ static inline void ha_trace_error_env(struct ha_monitor *ha_mon,
 #define ha_get_target(ha_mon) da_get_target(&ha_mon->da_mon)
 
 static inline void ha_trace_error_env(struct ha_monitor *ha_mon,
-				      char *curr_state, char *event, char *env,
+				      const char *curr_state, const char *event, const char *env,
 				      da_id_type id)
 {
 	CONCATENATE(trace_error_env_, MONITOR_NAME)(id, curr_state, event, env);

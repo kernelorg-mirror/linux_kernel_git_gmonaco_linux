@@ -24,8 +24,8 @@ enum events_da_perobj_parent {
 };
 
 struct automaton_da_perobj_parent {
-	char *state_names[state_max_da_perobj_parent];
-	char *event_names[event_max_da_perobj_parent];
+	const char *state_names[state_max_da_perobj_parent];
+	const char *event_names[event_max_da_perobj_parent];
 	unsigned char function[state_max_da_perobj_parent][event_max_da_perobj_parent];
 	unsigned char initial_state;
 	bool final_states[state_max_da_perobj_parent];

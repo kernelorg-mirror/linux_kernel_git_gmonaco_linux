@@ -33,9 +33,9 @@ enum envs_stall {
 _Static_assert(env_max_stored_stall <= MAX_HA_ENV_LEN, "Not enough slots");
 
 struct automaton_stall {
-	char *state_names[state_max_stall];
-	char *event_names[event_max_stall];
-	char *env_names[env_max_stall];
+	const char *state_names[state_max_stall];
+	const char *event_names[event_max_stall];
+	const char *env_names[env_max_stall];
 	unsigned char function[state_max_stall][event_max_stall];
 	unsigned char initial_state;
 	bool final_states[state_max_stall];

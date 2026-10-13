@@ -31,8 +31,8 @@ enum events_sts {
 };
 
 struct automaton_sts {
-	char *state_names[state_max_sts];
-	char *event_names[event_max_sts];
+	const char *state_names[state_max_sts];
+	const char *event_names[event_max_sts];
 	unsigned char function[state_max_sts][event_max_sts];
 	unsigned char initial_state;
 	bool final_states[state_max_sts];

@@ -26,8 +26,8 @@ enum events_nrp {
 };
 
 struct automaton_nrp {
-	char *state_names[state_max_nrp];
-	char *event_names[event_max_nrp];
+	const char *state_names[state_max_nrp];
+	const char *event_names[event_max_nrp];
 	unsigned char function[state_max_nrp][event_max_nrp];
 	unsigned char initial_state;
 	bool final_states[state_max_nrp];

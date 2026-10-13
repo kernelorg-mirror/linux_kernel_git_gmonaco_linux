@@ -41,9 +41,9 @@ _Static_assert(env_max_stored_nomiss <= MAX_HA_ENV_LEN, "Not enough slots");
 #define HA_CLK_NS
 
 struct automaton_nomiss {
-	char *state_names[state_max_nomiss];
-	char *event_names[event_max_nomiss];
-	char *env_names[env_max_nomiss];
+	const char *state_names[state_max_nomiss];
+	const char *event_names[event_max_nomiss];
+	const char *env_names[env_max_nomiss];
 	unsigned char function[state_max_nomiss][event_max_nomiss];
 	unsigned char initial_state;
 	bool final_states[state_max_nomiss];

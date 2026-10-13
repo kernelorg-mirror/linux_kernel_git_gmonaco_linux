@@ -30,9 +30,9 @@ enum envs_opid {
 _Static_assert(env_max_stored_opid <= MAX_HA_ENV_LEN, "Not enough slots");
 
 struct automaton_opid {
-	char *state_names[state_max_opid];
-	char *event_names[event_max_opid];
-	char *env_names[env_max_opid];
+	const char *state_names[state_max_opid];
+	const char *event_names[event_max_opid];
+	const char *env_names[env_max_opid];
 	unsigned char function[state_max_opid][event_max_opid];
 	unsigned char initial_state;
 	bool final_states[state_max_opid];
