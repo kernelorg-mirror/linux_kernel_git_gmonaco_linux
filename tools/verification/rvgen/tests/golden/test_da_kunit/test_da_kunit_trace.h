@@ -5,11 +5,6 @@
  */
 
 #ifdef CONFIG_RV_MON_TEST_DA_KUNIT
-DEFINE_EVENT(event_da_monitor, event_test_da_kunit,
-	     TP_PROTO(char *state, char *event, char *next_state, bool final_state),
-	     TP_ARGS(state, event, next_state, final_state));
-
-DEFINE_EVENT(error_da_monitor, error_test_da_kunit,
-	     TP_PROTO(char *state, char *event),
-	     TP_ARGS(state, event));
+DEFINE_DA_EVENT(event_test_da_kunit);
+DEFINE_DA_ERROR(error_test_da_kunit);
 #endif /* CONFIG_RV_MON_TEST_DA_KUNIT */

@@ -111,9 +111,6 @@ class RVGenerator:
     def fill_monitor_class(self):
         return "NotImplemented"
 
-    def fill_tracepoint_args_skel(self, tp_type):
-        return "NotImplemented"
-
     def fill_monitor_deps(self):
         buff = []
         buff.append("	# XXX: add dependencies if there")
@@ -227,20 +224,19 @@ class Monitor(RVGenerator):
         super().__init__(extra_params)
         self.trace_h = self._read_template_file("trace.h")
 
+    def _is_id_monitor(self):
+        return False
+
     def fill_trace_h(self):
         trace_h = self.trace_h
         monitor_class = self.fill_monitor_class()
+        macro_suffix = "_ID" if self._is_id_monitor() else ""
         monitor_class_type = self.fill_monitor_class_type()
-        tracepoint_args_skel_event = self.fill_tracepoint_args_skel("event")
-        tracepoint_args_skel_error = self.fill_tracepoint_args_skel("error")
-        tracepoint_args_skel_error_env = self.fill_tracepoint_args_skel("error_env")
         trace_h = trace_h.replace("%%MODEL_NAME%%", self.name)
         trace_h = trace_h.replace("%%MODEL_NAME_UP%%", self.name.upper())
         trace_h = trace_h.replace("%%MONITOR_CLASS%%", monitor_class)
         trace_h = trace_h.replace("%%MONITOR_CLASS_TYPE%%", monitor_class_type)
-        trace_h = trace_h.replace("%%TRACEPOINT_ARGS_SKEL_EVENT%%", tracepoint_args_skel_event)
-        trace_h = trace_h.replace("%%TRACEPOINT_ARGS_SKEL_ERROR%%", tracepoint_args_skel_error)
-        trace_h = trace_h.replace("%%TRACEPOINT_ARGS_SKEL_ERROR_ENV%%", tracepoint_args_skel_error_env)
+        trace_h = trace_h.replace("%%MACRO_SUFFIX%%", macro_suffix)
         return trace_h
 
     def print_files(self):

@@ -125,34 +125,6 @@ class dot2k(Monitor, Dot2c):
             return "da_monitor_id"
         return "da_monitor"
 
-    def fill_tracepoint_args_skel(self, tp_type: str) -> str:
-        buff = []
-        tp_args_event = [
-                ("char *", "state"),
-                ("char *", "event"),
-                ("char *", "next_state"),
-                ("bool ",  "final_state"),
-                ]
-        tp_args_error = [
-                ("char *", "state"),
-                ("char *", "event"),
-                ]
-        tp_args_error_env = tp_args_error + [("char *", "env")]
-        tp_args_dict = {
-                "event": tp_args_event,
-                "error": tp_args_error,
-                "error_env": tp_args_error_env
-                }
-        tp_args_id = ("int ", "id")
-        tp_args = tp_args_dict[tp_type]
-        if self._is_id_monitor():
-            tp_args.insert(0, tp_args_id)
-        tp_proto_c = ", ".join([a + b for a, b in tp_args])
-        tp_args_c = ", ".join([b for a, b in tp_args])
-        buff.append(f"	     TP_PROTO({tp_proto_c}),")
-        buff.append(f"	     TP_ARGS({tp_args_c})")
-        return '\n'.join(buff)
-
     def _fill_hybrid_definitions(self) -> list:
         """Stub, not valid for deterministic automata"""
         return []

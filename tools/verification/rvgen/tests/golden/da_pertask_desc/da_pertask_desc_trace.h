@@ -5,11 +5,6 @@
  */
 
 #ifdef CONFIG_RV_MON_DA_PERTASK_DESC
-DEFINE_EVENT(event_da_monitor_id, event_da_pertask_desc,
-	     TP_PROTO(int id, char *state, char *event, char *next_state, bool final_state),
-	     TP_ARGS(id, state, event, next_state, final_state));
-
-DEFINE_EVENT(error_da_monitor_id, error_da_pertask_desc,
-	     TP_PROTO(int id, char *state, char *event),
-	     TP_ARGS(id, state, event));
+DEFINE_DA_EVENT_ID(event_da_pertask_desc);
+DEFINE_DA_ERROR_ID(error_da_pertask_desc);
 #endif /* CONFIG_RV_MON_DA_PERTASK_DESC */
