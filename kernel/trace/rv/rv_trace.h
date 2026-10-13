@@ -57,6 +57,17 @@ DECLARE_EVENT_CLASS(error_da_monitor,
 		__get_str(state))
 );
 
+#define DEFINE_DA_EVENT(name)						\
+	DEFINE_EVENT(event_da_monitor, name,				\
+		TP_PROTO(char *state, char *event,			\
+			 char *next_state, bool final_state),		\
+		TP_ARGS(state, event, next_state, final_state))
+
+#define DEFINE_DA_ERROR(name)						\
+	DEFINE_EVENT(error_da_monitor, name,				\
+		TP_PROTO(char *state, char *event),			\
+		TP_ARGS(state, event))
+
 #include <monitors/wip/wip_trace.h>
 #include <monitors/sco/sco_trace.h>
 #include <monitors/scpd/scpd_trace.h>
@@ -89,6 +100,11 @@ DECLARE_EVENT_CLASS(error_env_da_monitor,
 		__get_str(state),
 		__get_str(env))
 );
+
+#define DEFINE_HA_ERROR_ENV(name)					\
+	DEFINE_EVENT(error_env_da_monitor, name,			\
+		TP_PROTO(char *state, char *event, char *env),		\
+		TP_ARGS(state, event, env))
 
 #include <monitors/opid/opid_trace.h>
 // Add new monitors based on CONFIG_HA_MON_EVENTS_IMPLICIT here
@@ -152,6 +168,17 @@ DECLARE_EVENT_CLASS(error_da_monitor_id,
 		__get_str(state))
 );
 
+#define DEFINE_DA_EVENT_ID(name)					\
+	DEFINE_EVENT(event_da_monitor_id, name,				\
+		TP_PROTO(int id, char *state, char *event,		\
+			 char *next_state, bool final_state),		\
+		TP_ARGS(id, state, event, next_state, final_state))
+
+#define DEFINE_DA_ERROR_ID(name)					\
+	DEFINE_EVENT(error_da_monitor_id, name,				\
+		TP_PROTO(int id, char *state, char *event),		\
+		TP_ARGS(id, state, event))
+
 #include <monitors/wwnr/wwnr_trace.h>
 #include <monitors/snroc/snroc_trace.h>
 #include <monitors/nrp/nrp_trace.h>
@@ -186,6 +213,11 @@ DECLARE_EVENT_CLASS(error_env_da_monitor_id,
 		__get_str(state),
 		__get_str(env))
 );
+
+#define DEFINE_HA_ERROR_ENV_ID(name)					\
+	DEFINE_EVENT(error_env_da_monitor_id, name,			\
+		TP_PROTO(int id, char *state, char *event, char *env),	\
+		TP_ARGS(id, state, event, env))
 
 #include <monitors/stall/stall_trace.h>
 #include <monitors/nomiss/nomiss_trace.h>
@@ -239,6 +271,18 @@ DECLARE_EVENT_CLASS(error_ltl_monitor_id,
 
 	TP_printk("%s[%d]: violation detected", __get_str(comm), __entry->pid)
 );
+
+#define DEFINE_LTL_EVENT_ID(name)					\
+	DEFINE_EVENT(event_ltl_monitor_id, name,			\
+		TP_PROTO(struct task_struct *task, char *states,	\
+			 char *atoms, char *next),			\
+		TP_ARGS(task, states, atoms, next))
+
+#define DEFINE_LTL_ERROR_ID(name)					\
+	DEFINE_EVENT(error_ltl_monitor_id, name,			\
+		TP_PROTO(struct task_struct *task),			\
+		TP_ARGS(task))
+
 #include <monitors/pagefault/pagefault_trace.h>
 #include <monitors/sleep/sleep_trace.h>
 #include <monitors/wakeup/wakeup_trace.h>

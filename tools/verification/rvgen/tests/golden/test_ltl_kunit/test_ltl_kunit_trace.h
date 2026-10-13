@@ -5,10 +5,6 @@
  */
 
 #ifdef CONFIG_RV_MON_TEST_LTL_KUNIT
-DEFINE_EVENT(event_ltl_monitor_id, event_test_ltl_kunit,
-	     TP_PROTO(struct task_struct *task, char *states, char *atoms, char *next),
-	     TP_ARGS(task, states, atoms, next));
-DEFINE_EVENT(error_ltl_monitor_id, error_test_ltl_kunit,
-	     TP_PROTO(struct task_struct *task),
-	     TP_ARGS(task));
+DEFINE_LTL_EVENT_ID(event_test_ltl_kunit);
+DEFINE_LTL_ERROR_ID(error_test_ltl_kunit);
 #endif /* CONFIG_RV_MON_TEST_LTL_KUNIT */
