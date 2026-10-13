@@ -84,4 +84,8 @@ check "invalid ltl file syntax" \
 	"$RVGEN monitor -c ltl -s tests/specs/test_invalid.ltl -t per_task" 1 \
 	"No terminal matches 'i'" "Traceback (most recent call last)"
 
+check "reject conflicting deterministic automaton transitions" \
+	"$RVGEN monitor -c da -s tests/specs/test_nondeterministic_da.dot -t per_cpu" 1 \
+	"Duplicate transition for event event_2 in state state_a" "Traceback (most recent call last)"
+
 test_end
