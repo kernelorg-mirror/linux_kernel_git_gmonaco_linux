@@ -49,6 +49,7 @@
 #include <linux/sched/debug.h>
 #include <linux/sched/task_stack.h>
 #include <linux/panic.h>
+#include <linux/btf.h>
 
 #include <linux/uaccess.h>
 #include <asm/sections.h>
@@ -5063,6 +5064,73 @@ void console_try_replay_all(void)
 		console_unlock();
 	}
 }
+
+#ifdef CONFIG_BPF_SYSCALL
+
+__bpf_kfunc_start_defs();
+
+/**
+ * bpf_vprintk_deferred - print a message to the kernel log buffer from BPF
+ *
+ * @fmt__str: pointer to a read-only, NUL-terminated format string
+ * @args: pointer to an array of u64 arguments for the format string
+ * @args__sz: size of @args in bytes
+ *
+ * This is printk(). It can be called from any context. We want it to work.
+ *
+ * Return: the number of bytes stored in the log buffer, or a negative
+ * errno on error.
+ */
+__bpf_kfunc int bpf_vprintk_deferred(const char *fmt__str,
+				     const void *args, u32 args__sz)
+{
+	struct bpf_bprintf_data data = {
+		.get_bin_args	= true,
+		.get_buf	= true,
+	};
+	int ret, num_args;
+
+	if (args__sz & 7 || args__sz > MAX_BPRINTF_VARARGS * 8 ||
+	    (args__sz && !args))
+		return -EINVAL;
+	num_args = args__sz / 8;
+
+	ret = bpf_bprintf_prepare(fmt__str, UINT_MAX, args, num_args, &data);
+	if (ret < 0)
+		return ret;
+
+	bstr_printf(data.buf, MAX_BPRINTF_BUF, fmt__str, data.bin_args);
+	ret = printk_deferred("%s", data.buf);
+	bpf_bprintf_cleanup(&data);
+
+	return ret;
+}
+
+__bpf_kfunc_end_defs();
+
+BTF_KFUNCS_START(vprintk_deferred_kfunc_set_ids)
+BTF_ID_FLAGS(func, bpf_vprintk_deferred, KF_SPINLOCK_SAFE)
+BTF_KFUNCS_END(vprintk_deferred_kfunc_set_ids)
+
+static const struct btf_kfunc_id_set vprintk_deferred_kfunc_set = {
+	.owner = THIS_MODULE,
+	.set   = &vprintk_deferred_kfunc_set_ids,
+};
+
+static int __init printk_kfuncs_init(void)
+{
+	int err;
+
+	err = register_btf_kfunc_id_set(BPF_PROG_TYPE_KPROBE,
+					&vprintk_deferred_kfunc_set);
+	err = err ?: register_btf_kfunc_id_set(BPF_PROG_TYPE_TRACING,
+					       &vprintk_deferred_kfunc_set);
+
+	return err;
+}
+late_initcall(printk_kfuncs_init);
+
+#endif /* CONFIG_BPF_SYSCALL */
 #endif
 
 #ifdef CONFIG_SMP
