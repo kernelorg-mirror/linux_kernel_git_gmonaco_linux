@@ -37,6 +37,7 @@
 #include <linux/context_tracking.h>
 #include <linux/seq_buf.h>
 #include <linux/sys_info.h>
+#include <linux/btf.h>
 #include <trace/events/error_report.h>
 #include <asm/sections.h>
 #include <kunit/test-bug.h>
@@ -1272,3 +1273,44 @@ static int __init panic_on_taint_setup(char *s)
 	return 0;
 }
 early_param("panic_on_taint", panic_on_taint_setup);
+
+#ifdef CONFIG_BPF_SYSCALL
+
+__bpf_kfunc_start_defs();
+
+/**
+ * bpf_panic - panic the kernel from BPF
+ *
+ * @msg: pointer to the message to print as the panic reason
+ * @msg__sz: size of @msg in bytes
+ */
+__bpf_kfunc void bpf_panic(const char *msg, u32 msg__sz)
+{
+	panic("%.*s", (int)msg__sz, msg);
+}
+
+__bpf_kfunc_end_defs();
+
+BTF_KFUNCS_START(panic_kfunc_set_ids)
+BTF_ID_FLAGS(func, bpf_panic, KF_DESTRUCTIVE)
+BTF_KFUNCS_END(panic_kfunc_set_ids)
+
+static const struct btf_kfunc_id_set panic_kfunc_set = {
+	.owner = THIS_MODULE,
+	.set   = &panic_kfunc_set_ids,
+};
+
+static int __init panic_kfuncs_init(void)
+{
+	int err;
+
+	err = register_btf_kfunc_id_set(BPF_PROG_TYPE_KPROBE,
+					&panic_kfunc_set);
+	err = err ?: register_btf_kfunc_id_set(BPF_PROG_TYPE_TRACING,
+					       &panic_kfunc_set);
+
+	return err;
+}
+late_initcall(panic_kfuncs_init);
+
+#endif /* CONFIG_BPF_SYSCALL */
