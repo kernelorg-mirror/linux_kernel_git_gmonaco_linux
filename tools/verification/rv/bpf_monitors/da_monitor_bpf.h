@@ -38,24 +38,6 @@ enum rv_trace_type {
 /* Configuration set from userspace before loading */
 const volatile SEC(".rodata.trace_level") enum rv_trace_type trace_level = RV_TRACE_NONE;
 
-/*
- * BPF ring buffer for trace events
- * Events and errors are sent to userspace via this ringbuf
- */
-struct rv_trace_entry {
-	uint8_t event_type;
-	uint8_t is_final;
-	char comm[TASK_COMM_LEN];
-#if RV_MON_TYPE == RV_MON_PER_TASK || RV_MON_TYPE == RV_MON_PER_OBJ
-	uint32_t id;
-#endif
-	uint32_t pid;
-	uint32_t cpu;
-	uint32_t curr_state;
-	uint32_t event;
-	uint32_t next_state;
-};
-
 #define rv_mon_map CONCATENATE(rv_mon_, MONITOR_NAME)
 #define rv_rb CONCATENATE(rv_rb_, MONITOR_NAME)
 
@@ -71,7 +53,6 @@ struct {
 /* Force types to be included in BTF for userspace parsing */
 static const enum states __used _btf_states;
 static const enum events __used _btf_events;
-static const struct rv_trace_entry __used *_btf_trace;
 
 static inline void da_monitor_reset(struct da_monitor *da_mon);
 
@@ -359,69 +340,68 @@ static inline void da_reset_bpf(da_id_type id, monitor_target_bpf target)
 
 #endif /* RV_MON_TYPE */
 
-static inline void *_da_trace_common(enum states curr_state, enum events event,
-				     enum rv_trace_type type)
-{
-	struct rv_trace_entry *entry;
-	static const char stub_comm[] = "<XXX>";
+#define _da_trace(type, fmt, ...)                     \
+	do {                                          \
+		if (trace_level >= type)              \
+			bpf_printk(fmt, __VA_ARGS__); \
+	} while (0)
 
-	if (trace_level < type)
-		return NULL;
-
-	entry = bpf_ringbuf_reserve(&rv_rb, sizeof(*entry), 0);
-	if (!entry)
-		return NULL;
-	entry->event_type = type;
-	entry->cpu = bpf_get_smp_processor_id();
-	entry->pid = bpf_get_current_pid_tgid() & 0xffffffff;
-	if (bpf_get_current_comm(entry->comm, TASK_COMM_LEN))
-		__builtin_memcpy(entry->comm, stub_comm, sizeof(stub_comm));
-	entry->curr_state = curr_state;
-	entry->event = event;
-
-	return entry;
-}
-
-#if RV_MON_TYPE == RV_MON_PER_TASK || RV_MON_TYPE == RV_MON_PER_OBJ
-static inline void _da_trace_id(struct rv_trace_entry *entry, da_id_type id)
-{
-	entry->id = id;
-}
-#else
-static inline void _da_trace_id(struct rv_trace_entry *entry, da_id_type id) { }
-#endif
-
+#if RV_MON_TYPE == RV_MON_GLOBAL || RV_MON_TYPE == RV_MON_PER_CPU
 /*
- * BPF trace events implementation using ring buffer
+ * Trace events for implicit monitors. Implicit monitor is the one which the
+ * handler does not need to specify which da_monitor to manipulate. Examples
+ * of implicit monitor are the per_cpu or the global ones.
  */
+
 static inline void da_trace_event(struct da_monitor *da_mon,
-				  enum states curr_state, enum events event,
-				  enum states next_state,
+				  const char *curr_state, const char *event,
+				  const char *next_state, bool is_final,
 				  da_id_type id)
 {
-	struct rv_trace_entry *entry = _da_trace_common(curr_state, event, RV_TRACE_EVENT);
-
-	if (!entry)
-		return;
-	_da_trace_id(entry, id);
-	entry->is_final = model_is_final_state(next_state);
-	entry->next_state = next_state;
-
-	bpf_ringbuf_submit(entry, 0);
+	_da_trace(RV_TRACE_EVENT, "event %s curr=%s event=%s next=%s final=%s\n",
+		  __stringify(MONITOR_NAME), curr_state, event, next_state,
+		  is_final);
 }
 
 static inline void da_trace_error(struct da_monitor *da_mon,
-				  enum states curr_state, enum events event,
+				  const char *curr_state, const char *event,
 				  da_id_type id)
 {
-	struct rv_trace_entry *entry = _da_trace_common(curr_state, event, RV_TRACE_ERROR);
-
-	if (!entry)
-		return;
-	_da_trace_id(entry, id);
-
-	bpf_ringbuf_submit(entry, 0);
+	_da_trace(RV_TRACE_ERROR, "error %s curr=%s event=%s\n",
+		  __stringify(MONITOR_NAME), curr_state, event);
 }
+
+/*
+ * da_get_id - unused for implicit monitors
+ */
+static inline da_id_type da_get_id(struct da_monitor *da_mon)
+{
+	return 0;
+}
+
+#elif RV_MON_TYPE == RV_MON_PER_TASK || RV_MON_TYPE == RV_MON_PER_OBJ
+/*
+ * Trace events for per_task/per_object monitors, report the target id.
+ */
+
+static inline void da_trace_event(struct da_monitor *da_mon,
+				  const char *curr_state, const char *event,
+				  const char *next_state, bool is_final,
+				  da_id_type id)
+{
+	_da_trace(RV_TRACE_EVENT, "event %s id=%d curr=%s event=%s next=%s final=%s\n",
+		  id, __stringify(MONITOR_NAME), curr_state, event, next_state,
+		  is_final);
+}
+
+static inline void da_trace_error(struct da_monitor *da_mon,
+				  const char *curr_state, const char *event,
+				  da_id_type id)
+{
+	_da_trace(RV_TRACE_ERROR, "error %s id=%d curr=%s event=%s\n",
+		  id, __stringify(MONITOR_NAME), curr_state, event);
+}
+#endif /* RV_MON_TYPE */
 
 /* Some monitors require extra initialisation. */
 #ifndef da_extra_init
