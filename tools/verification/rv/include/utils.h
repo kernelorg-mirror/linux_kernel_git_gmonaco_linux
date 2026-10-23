@@ -17,7 +17,6 @@ struct config {
 	bool is_container;
 	bool trace;
 	bool is_bpf;
-	int has_id;
 	int my_pid;
 	char *initial_reactor;
 	char *reactor;

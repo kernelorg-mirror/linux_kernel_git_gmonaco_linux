@@ -15,11 +15,13 @@
 #include <trace.h>
 #include <utils.h>
 
+#define FILTER_MAX 128
+
 /**
- * collect_registered_events - call the existing callback function for the event
+ * collect_registered_events - print an event collected from the trace buffer
  *
- * If an event has a registered callback function, call it.
- * Otherwise, ignore the event.
+ * Print the event with a standard prefix for common fields and the
+ * event-specific pretty-print for the event content.
  *
  * Returns 0 if the event was collected, 1 if the tool should stop collecting trace.
  */
@@ -33,10 +35,12 @@ collect_registered_events(struct tep_event *event, struct tep_record *record,
 	if (should_stop())
 		return 1;
 
-	if (!event->handler)
-		return 0;
+	tep_print_event(event->tep, s, record, "%16s-%-8d [%.3d] %s: %s\n",
+			TEP_PRINT_COMM, TEP_PRINT_PID, TEP_PRINT_CPU,
+			TEP_PRINT_NAME, TEP_PRINT_INFO);
 
-	event->handler(s, record, event, context);
+	trace_seq_do_printf(s);
+	trace_seq_reset(s);
 
 	return 0;
 }
@@ -109,176 +113,111 @@ out_err:
 }
 
 /**
- * trace_instance_start - start tracing a given rv instance
- *
- * Returns 0 on success, -1 otherwise.
- */
-int trace_instance_start(struct trace_instance *trace)
-{
-	return tracefs_trace_on(trace->inst);
-}
-
-static int monitor_has_id(char *name)
-{
-	char path[MAX_PATH];
-	char *format;
-	int has_id;
-
-	snprintf(path, MAX_PATH, "events/rv/event_%s/format", name);
-	format = tracefs_instance_file_read(NULL, path, NULL);
-	if (!format) {
-		err_msg("rv: fail reading monitor's %s format event file\n", name);
-		return -1;
-	}
-
-	/* print fmt: "%d: %s x %s -> %s %s", REC->id, ... */
-	has_id = !!strstr(format, "REC->id");
-
-	debug_msg("rv: monitor %s has id: %s\n", name, has_id ? "yes" : "no");
-
-	free(format);
-
-	return has_id;
-}
-
-/**
  * trace_print_header - print the header of the monitor events output
- *
- * Print the column header of the rv monitor events output: task, pid,
- * cpu and event type, followed by the state machine transition
- * (state x event -> next state and final). The ID column is printed
- * only if the monitor's events have an id field.
  */
 void trace_print_header(struct trace_seq *s)
 {
-	trace_seq_printf(s, "%16s-%-8s %5s %5s ", "<TASK>", "PID", "[CPU]", "TYPE");
-	if (config.has_id)
-		trace_seq_printf(s, "%8s ", "ID");
-
-	trace_seq_printf(s, "%24s x %-24s -> %-24s %s\n",
-			 "STATE",
-			 "EVENT",
-			 "NEXT_STATE",
-			 "FINAL");
-
-	trace_seq_printf(s, "%16s %-8s %5s %5s ", " | ", " | ", " | ", " | ");
-
-	if (config.has_id)
-		trace_seq_printf(s, "%8s ", " | ");
-
-	trace_seq_printf(s, "%24s   %-24s    %-24s %s\n",
-			 " | ",
-			 " | ",
-			 " | ",
-			 "|");
+	trace_seq_printf(s, "%16s-%-8s %5s %5s\n", "<TASK>", "PID", "[CPU]", "TYPE");
+	trace_seq_printf(s, "%16s %-8s %5s %5s\n", " | ", " | ", " | ", " | ");
+	trace_seq_do_printf(s);
+	trace_seq_reset(s);
 }
 
 /*
- * da_event_handler - callback to handle event events
- *
- * Called any time a rv:"monitor"_event events is generated.
- * It parses and prints event.
+ * apply_filter_enable - if a filter is provided, apply it, then enable the event
  */
-static int da_event_handler(struct trace_seq *s, struct tep_record *record,
-			    struct tep_event *trace_event, void *context)
+static int apply_filter_enable(struct trace_instance *inst,
+			       struct tep_event *tevent, const char *filter)
 {
-	char *state, *event, *next_state;
-	unsigned long long final_state;
-	unsigned long long pid;
-	unsigned long long id;
-	int val;
-	bool missing_id;
+	if (*filter) {
+		if (tracefs_event_filter_apply(inst->inst, tevent, filter) < 0) {
+			char *err = tracefs_error_last(inst->inst);
 
-	if (config.has_id)
-		missing_id = tep_get_field_val(s, trace_event, "id", record, &id, 1);
-
-	tep_get_common_field_val(s, trace_event, "common_pid", record, &pid, 1);
-
-	if (config.has_id && (config.my_pid == id))
-		return 0;
-	else if (config.my_pid == pid)
-		return 0;
-
-	tep_print_event(trace_event->tep, s, record, "%16s-%-8d [%.3d] ",
-			TEP_PRINT_COMM, TEP_PRINT_PID, TEP_PRINT_CPU);
-
-	if (config.is_container)
-		tep_print_event(trace_event->tep, s, record, "%s ", TEP_PRINT_NAME);
-	else
-		trace_seq_printf(s, "event ");
-
-	if (config.has_id) {
-		if (missing_id)
-			/* placeholder if we are dealing with a mixed-type container*/
-			trace_seq_printf(s, "        ");
-		else
-			trace_seq_printf(s, "%8llu ", id);
+			err_msg("trace: fail applying filter %s to event %s:\n%s\n",
+				filter, tevent->name, err ?: "(no error)");
+			free(err);
+			return -1;
+		}
 	}
 
-	state = tep_get_field_raw(s, trace_event, "state", record, &val, 0);
-	event = tep_get_field_raw(s, trace_event, "event", record, &val, 0);
-	next_state = tep_get_field_raw(s, trace_event, "next_state", record, &val, 0);
-	tep_get_field_val(s, trace_event, "final_state", record, &final_state, 1);
-
-	trace_seq_printf(s, "%24s x %-24s -> %-24s %s\n",
-			 state,
-			 event,
-			 next_state,
-			 final_state ? "Y" : "N");
-
-	trace_seq_do_printf(s);
-	trace_seq_reset(s);
+	if (tracefs_event_enable(inst->inst, tevent->system, tevent->name) < 0) {
+		err_msg("trace: fail enabling the rv:%s event: %s\n",
+			tevent->name, strerror(errno));
+		return -1;
+	}
 
 	return 0;
+
 }
 
 /*
- * da_error_handler - callback to handle error events
- *
- * Called any time a rv:"monitor"_errors events is generated.
- * It parses and prints event.
+ * enable_specific_event - enable a monitor-specific event with filters
  */
-static int da_error_handler(struct trace_seq *s, struct tep_record *record,
-			    struct tep_event *trace_event, void *context)
+static int enable_specific_event(struct trace_instance *inst, const char *event_name)
 {
-	unsigned long long pid, id;
-	int cpu = record->cpu;
-	char *state, *event;
-	int val;
-	bool missing_id;
+	struct tep_event *tevent = tep_find_event_by_name(inst->tep, "rv", event_name);
+	char filter[FILTER_MAX] = "";
 
-	if (config.has_id)
-		missing_id = tep_get_field_val(s, trace_event, "id", record, &id, 1);
-
-	tep_get_common_field_val(s, trace_event, "common_pid", record, &pid, 1);
-
-	if (config.has_id && config.my_pid == id)
-		return 0;
-	else if (config.my_pid == pid)
-		return 0;
-
-	trace_seq_printf(s, "%8lld [%03d] ", pid, cpu);
-
-	if (config.is_container)
-		tep_print_event(trace_event->tep, s, record, "%s ", TEP_PRINT_NAME);
-	else
-		trace_seq_printf(s, "error ");
-
-	if (config.has_id) {
-		if (missing_id)
-			/* placeholder if we are dealing with a mixed-type container*/
-			trace_seq_printf(s, "        ");
-		else
-			trace_seq_printf(s, "%8llu ", id);
+	if (!tevent) {
+		err_msg("trace: fail finding the rv:%s event\n", event_name);
+		return -1;
 	}
 
-	state = tep_get_field_raw(s, trace_event, "state", record, &val, 0);
-	event = tep_get_field_raw(s, trace_event, "event", record, &val, 0);
+	if (config.my_pid > 0) {
+		if (tep_find_field(tevent, "id"))
+			snprintf(filter, sizeof(filter), "common_pid != %d && id != %d",
+				 config.my_pid, config.my_pid);
+		else
+			snprintf(filter, sizeof(filter), "common_pid != %d",
+				 config.my_pid);
+	}
 
-	trace_seq_printf(s, "%24s x %s\n", state, event);
+	return apply_filter_enable(inst, tevent, filter);
+}
 
-	trace_seq_do_printf(s);
-	trace_seq_reset(s);
+/*
+ * enable_generic_event - enable a generic event with filters
+ */
+static int enable_generic_event(struct trace_instance *inst, const char *event_name, char *name)
+{
+	struct tep_event *tevent = tep_find_event_by_name(inst->tep, "rv", event_name);
+	char filter[FILTER_MAX] = "";
+	size_t len;
+
+	if (!tevent) {
+		err_msg("trace: fail finding the rv:%s event\n", event_name);
+		return -1;
+	}
+
+	len = snprintf(filter, sizeof(filter), "mon == \"%s\"", name);
+	if (len >= sizeof(filter)) {
+		err_msg("trace: monitor name %s too long\n", name);
+		return -1;
+	}
+
+	if (config.my_pid > 0)
+		snprintf(filter + len, sizeof(filter) - len,
+			 " && common_pid != %d && !(has_id == 1 && id == %d)",
+			 config.my_pid, config.my_pid);
+
+	return apply_filter_enable(inst, tevent, filter);
+}
+
+/*
+ * enable_bpf_events - enable rv:event_monitor and rv:error_monitor for a monitor
+ *
+ * BPF monitors report via generic rv:event_monitor and rv:error_monitor events.
+ * Enable the events and filter them to only collect the messages of the given monitor.
+ *
+ * Returns 0 on success, -1 otherwise.
+ */
+static int enable_bpf_events(struct trace_instance *inst, char *name)
+{
+	if (enable_generic_event(inst, "event_monitor", name))
+		return -1;
+
+	if (enable_generic_event(inst, "error_monitor", name))
+		return -1;
 
 	return 0;
 }
@@ -287,35 +226,24 @@ static int da_error_handler(struct trace_seq *s, struct tep_record *record,
  * trace_enable_monitor_events - enable a monitor's events in a trace instance
  *
  * Enable the rv:event_"monitor" and rv:error_"monitor" events in the
- * given trace instance, and register the callbacks that parse and
- * print these events.
+ * given trace instance, and register the filters for these events.
+ * If enabled, the filter for self pid (-s) is applied here.
  *
  * Returns 0 on success, -1 otherwise.
  */
 static int trace_enable_monitor_events(struct trace_instance *inst, char *name)
 {
 	char event[MAX_DA_NAME_LEN + 7]; /* max(error_,event_) + '0' = 7 */
-	int retval;
+
+	if (config.is_bpf)
+		return enable_bpf_events(inst, name);
 
 	snprintf(event, sizeof(event), "event_%s", name);
-	retval = tracefs_event_enable(inst->inst, "rv",  event);
-	if (retval)
+	if (enable_specific_event(inst, event))
 		return -1;
-
-	tep_register_event_handler(inst->tep, -1, "rv", event,
-				   da_event_handler, NULL);
 
 	snprintf(event, sizeof(event), "error_%s", name);
-	retval = tracefs_event_enable(inst->inst, "rv", event);
-	if (retval)
-		return -1;
-
-	tep_register_event_handler(inst->tep, -1, "rv", event,
-				   da_error_handler, NULL);
-
-	/* set if at least 1 monitor has id in case of a container */
-	config.has_id = monitor_has_id(name);
-	if (config.has_id < 0)
+	if (enable_specific_event(inst, event))
 		return -1;
 
 	return 0;
