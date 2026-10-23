@@ -385,8 +385,9 @@ static int trace_enable_container_events(struct trace_instance *inst, char *name
 	if (!abs_path)
 		return -1;
 	dp = opendir(abs_path);
+	free(abs_path);
 	if (!dp)
-		goto out_free;
+		return -1;
 
 	while (!retval && (ep = readdir(dp))) {
 		if (ep->d_type != DT_DIR || ep->d_name[0] == '.')
@@ -395,8 +396,6 @@ static int trace_enable_container_events(struct trace_instance *inst, char *name
 	}
 
 	closedir(dp);
-out_free:
-	free(abs_path);
 	return retval;
 }
 
