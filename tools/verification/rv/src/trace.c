@@ -180,6 +180,39 @@ void trace_print_header(struct trace_seq *s)
 			 "|");
 }
 
+static inline int print_event_prefix(struct trace_seq *s,
+				     struct tep_record *record,
+				     struct tep_event *trace_event)
+{
+	unsigned long long pid;
+	unsigned long long id;
+	bool missing_id;
+
+	if (config.has_id)
+		missing_id = tep_get_field_val(s, trace_event, "id", record, &id, 1);
+
+	tep_get_common_field_val(s, trace_event, "common_pid", record, &pid, 1);
+
+	if (config.has_id && (config.my_pid == id))
+		return -1;
+	else if (config.my_pid == pid)
+		return -1;
+
+	tep_print_event(trace_event->tep, s, record, "%16s-%-8d [%.3d] %s: ",
+			TEP_PRINT_COMM, TEP_PRINT_PID, TEP_PRINT_CPU,
+			TEP_PRINT_NAME);
+
+	if (config.has_id) {
+		if (missing_id)
+			/* placeholder if we are dealing with a mixed-type container*/
+			trace_seq_printf(s, "        ");
+		else
+			trace_seq_printf(s, "%8llu ", id);
+	}
+
+	return 0;
+}
+
 /*
  * da_event_handler - callback to handle event events
  *
@@ -191,36 +224,10 @@ static int da_event_handler(struct trace_seq *s, struct tep_record *record,
 {
 	char *state, *event, *next_state;
 	unsigned long long final_state;
-	unsigned long long pid;
-	unsigned long long id;
 	int val;
-	bool missing_id;
 
-	if (config.has_id)
-		missing_id = tep_get_field_val(s, trace_event, "id", record, &id, 1);
-
-	tep_get_common_field_val(s, trace_event, "common_pid", record, &pid, 1);
-
-	if (config.has_id && (config.my_pid == id))
+	if (print_event_prefix(s, record, trace_event))
 		return 0;
-	else if (config.my_pid == pid)
-		return 0;
-
-	tep_print_event(trace_event->tep, s, record, "%16s-%-8d [%.3d] ",
-			TEP_PRINT_COMM, TEP_PRINT_PID, TEP_PRINT_CPU);
-
-	if (config.is_container)
-		tep_print_event(trace_event->tep, s, record, "%s ", TEP_PRINT_NAME);
-	else
-		trace_seq_printf(s, "event ");
-
-	if (config.has_id) {
-		if (missing_id)
-			/* placeholder if we are dealing with a mixed-type container*/
-			trace_seq_printf(s, "        ");
-		else
-			trace_seq_printf(s, "%8llu ", id);
-	}
 
 	state = tep_get_field_raw(s, trace_event, "state", record, &val, 0);
 	event = tep_get_field_raw(s, trace_event, "event", record, &val, 0);
@@ -248,36 +255,11 @@ static int da_event_handler(struct trace_seq *s, struct tep_record *record,
 static int da_error_handler(struct trace_seq *s, struct tep_record *record,
 			    struct tep_event *trace_event, void *context)
 {
-	unsigned long long pid, id;
-	int cpu = record->cpu;
 	char *state, *event;
 	int val;
-	bool missing_id;
 
-	if (config.has_id)
-		missing_id = tep_get_field_val(s, trace_event, "id", record, &id, 1);
-
-	tep_get_common_field_val(s, trace_event, "common_pid", record, &pid, 1);
-
-	if (config.has_id && config.my_pid == id)
+	if (print_event_prefix(s, record, trace_event))
 		return 0;
-	else if (config.my_pid == pid)
-		return 0;
-
-	trace_seq_printf(s, "%8lld [%03d] ", pid, cpu);
-
-	if (config.is_container)
-		tep_print_event(trace_event->tep, s, record, "%s ", TEP_PRINT_NAME);
-	else
-		trace_seq_printf(s, "error ");
-
-	if (config.has_id) {
-		if (missing_id)
-			/* placeholder if we are dealing with a mixed-type container*/
-			trace_seq_printf(s, "        ");
-		else
-			trace_seq_printf(s, "%8llu ", id);
-	}
 
 	state = tep_get_field_raw(s, trace_event, "state", record, &val, 0);
 	event = tep_get_field_raw(s, trace_event, "event", record, &val, 0);
@@ -290,12 +272,81 @@ static int da_error_handler(struct trace_seq *s, struct tep_record *record,
 	return 0;
 }
 
+/*
+ * generic_event_handler - callback to handle events without a specific handler
+ *
+ * Called any time an event from a monitor type without a specific
+ * handler, e.g. ltl, is generated. It prints the event using its
+ * print fmt.
+ */
+static int generic_event_handler(struct trace_seq *s, struct tep_record *record,
+				  struct tep_event *trace_event, void *context)
+{
+	if (print_event_prefix(s, record, trace_event))
+		return 0;
+
+	tep_print_event(trace_event->tep, s, record, "%s\n", TEP_PRINT_INFO);
+
+	trace_seq_do_printf(s);
+	trace_seq_reset(s);
+
+	return 0;
+}
+
+/*
+ * event_is_da - check whether an event is from a da monitor
+ *
+ * The events from da monitors have the state and event fields used
+ * by the da handlers. Events from other monitor types, e.g. ltl,
+ * do not have them.
+ *
+ * Returns true if the event is from a da monitor, false otherwise.
+ */
+static bool event_is_da(struct tep_event *event)
+{
+	return tep_find_field(event, "state") && tep_find_field(event, "event");
+}
+
+/*
+ * enable_monitor_event - enable an rv monitor event and register its handler
+ *
+ * Enable the event in the trace instance and register the given
+ * handler, which is used if the event is from a da monitor. Events
+ * from other monitor types get the generic handler.
+ *
+ * Returns 0 on success, -1 otherwise.
+ */
+static int enable_monitor_event(struct trace_instance *inst, char *event,
+				tep_event_handler_func da_handler)
+{
+	struct tep_event *tevent;
+
+	if (tracefs_event_enable(inst->inst, "rv", event))
+		return -1;
+
+	tevent = tep_find_event_by_name(inst->tep, "rv", event);
+	if (!tevent) {
+		err_msg("trace: fail finding the rv:%s event\n", event);
+		return -1;
+	}
+
+	if (event_is_da(tevent))
+		tep_register_event_handler(inst->tep, -1, "rv", event,
+					   da_handler, NULL);
+	else
+		tep_register_event_handler(inst->tep, -1, "rv", event,
+					   generic_event_handler, NULL);
+
+	return 0;
+}
+
 /**
  * trace_enable_monitor_events - enable a monitor's events in a trace instance
  *
  * Enable the rv:event_"monitor" and rv:error_"monitor" events in the
- * given trace instance, and register the callbacks that parse and
- * print these events.
+ * given trace instance, and register the callbacks that print these
+ * events: da events get their specific handlers, events from other
+ * monitor types get the generic handler.
  *
  * Returns 0 on success, -1 otherwise.
  */
@@ -305,20 +356,14 @@ static int trace_enable_monitor_events(struct trace_instance *inst, char *name)
 	int retval;
 
 	snprintf(event, sizeof(event), "event_%s", name);
-	retval = tracefs_event_enable(inst->inst, "rv",  event);
+	retval = enable_monitor_event(inst, event, da_event_handler);
 	if (retval)
 		return -1;
-
-	tep_register_event_handler(inst->tep, -1, "rv", event,
-				   da_event_handler, NULL);
 
 	snprintf(event, sizeof(event), "error_%s", name);
-	retval = tracefs_event_enable(inst->inst, "rv", event);
+	retval = enable_monitor_event(inst, event, da_error_handler);
 	if (retval)
 		return -1;
-
-	tep_register_event_handler(inst->tep, -1, "rv", event,
-				   da_error_handler, NULL);
 
 	/* set if at least 1 monitor has id in case of a container */
 	config.has_id = monitor_has_id(name);
