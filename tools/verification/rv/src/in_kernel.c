@@ -9,7 +9,6 @@
 #include <string.h>
 #include <errno.h>
 #include <unistd.h>
-#include <dirent.h>
 
 #include <trace.h>
 #include <utils.h>
@@ -304,29 +303,6 @@ out_free:
 	return curr_reactor;
 }
 
-static int ikm_has_id(char *monitor_name)
-{
-	char path[MAX_PATH];
-	char *format;
-	int has_id;
-
-	snprintf(path, MAX_PATH, "events/rv/event_%s/format", monitor_name);
-	format = tracefs_instance_file_read(NULL, path, NULL);
-	if (!format) {
-		err_msg("ikm: fail reading monitor's %s format event file\n", monitor_name);
-		return -1;
-	}
-
-	/* print fmt: "%d: %s x %s -> %s %s", REC->id, ... */
-	has_id = !!strstr(format, "REC->id");
-
-	debug_msg("ikm: monitor %s has id: %s\n", monitor_name, has_id ? "yes" : "no");
-
-	free(format);
-
-	return has_id;
-}
-
 /**
  * ikm_list_monitors - list all available monitors
  *
@@ -379,260 +355,6 @@ int ikm_list_monitors(char *container)
 	return 0;
 }
 
-static void ikm_print_header(struct trace_seq *s)
-{
-	trace_seq_printf(s, "%16s-%-8s %5s %5s ", "<TASK>", "PID", "[CPU]", "TYPE");
-	if (config.has_id)
-		trace_seq_printf(s, "%8s ", "ID");
-
-	trace_seq_printf(s, "%24s x %-24s -> %-24s %s\n",
-			 "STATE",
-			 "EVENT",
-			 "NEXT_STATE",
-			 "FINAL");
-
-	trace_seq_printf(s, "%16s %-8s %5s %5s ", " | ", " | ", " | ", " | ");
-
-	if (config.has_id)
-		trace_seq_printf(s, "%8s ", " | ");
-
-	trace_seq_printf(s, "%24s   %-24s    %-24s %s\n",
-			 " | ",
-			 " | ",
-			 " | ",
-			 "|");
-
-}
-
-/*
- * ikm_event_handler - callback to handle event events
- *
- * Called any time a rv:"monitor"_event events is generated.
- * It parses and prints event.
- */
-static int
-ikm_event_handler(struct trace_seq *s, struct tep_record *record,
-		  struct tep_event *trace_event, void *context)
-{
-	/* if needed: struct trace_instance *inst = context; */
-	char *state, *event, *next_state;
-	unsigned long long final_state;
-	unsigned long long pid;
-	unsigned long long id;
-	int val;
-	bool missing_id;
-
-	if (config.has_id)
-		missing_id = tep_get_field_val(s, trace_event, "id", record, &id, 1);
-
-	tep_get_common_field_val(s, trace_event, "common_pid", record, &pid, 1);
-
-	if (config.has_id && (config.my_pid == id))
-		return 0;
-	else if (config.my_pid == pid)
-		return 0;
-
-	tep_print_event(trace_event->tep, s, record, "%16s-%-8d [%.3d] ",
-			TEP_PRINT_COMM, TEP_PRINT_PID, TEP_PRINT_CPU);
-
-	if (config.is_container)
-		tep_print_event(trace_event->tep, s, record, "%s ", TEP_PRINT_NAME);
-	else
-		trace_seq_printf(s, "event ");
-
-	if (config.has_id) {
-		if (missing_id)
-			/* placeholder if we are dealing with a mixed-type container*/
-			trace_seq_printf(s, "        ");
-		else
-			trace_seq_printf(s, "%8llu ", id);
-	}
-
-	state = tep_get_field_raw(s, trace_event, "state", record, &val, 0);
-	event = tep_get_field_raw(s, trace_event, "event", record, &val, 0);
-	next_state = tep_get_field_raw(s, trace_event, "next_state", record, &val, 0);
-	tep_get_field_val(s, trace_event, "final_state", record, &final_state, 1);
-
-	trace_seq_printf(s, "%24s x %-24s -> %-24s %s\n",
-			 state,
-			 event,
-			 next_state,
-			 final_state ? "Y" : "N");
-
-	trace_seq_do_printf(s);
-	trace_seq_reset(s);
-
-	return 0;
-}
-
-/*
- * ikm_error_handler - callback to handle error events
- *
- * Called any time a rv:"monitor"_errors events is generated.
- * It parses and prints event.
- */
-static int
-ikm_error_handler(struct trace_seq *s, struct tep_record *record,
-		  struct tep_event *trace_event, void *context)
-{
-	unsigned long long pid, id;
-	int cpu = record->cpu;
-	char *state, *event;
-	int val;
-	bool missing_id;
-
-	if (config.has_id)
-		missing_id = tep_get_field_val(s, trace_event, "id", record, &id, 1);
-
-	tep_get_common_field_val(s, trace_event, "common_pid", record, &pid, 1);
-
-	if (config.has_id && config.my_pid == id)
-		return 0;
-	else if (config.my_pid == pid)
-		return 0;
-
-	trace_seq_printf(s, "%8lld [%03d] ", pid, cpu);
-
-	if (config.is_container)
-		tep_print_event(trace_event->tep, s, record, "%s ", TEP_PRINT_NAME);
-	else
-		trace_seq_printf(s, "error ");
-
-	if (config.has_id) {
-		if (missing_id)
-			/* placeholder if we are dealing with a mixed-type container*/
-			trace_seq_printf(s, "        ");
-		else
-			trace_seq_printf(s, "%8llu ", id);
-	}
-
-	state = tep_get_field_raw(s, trace_event, "state", record, &val, 0);
-	event = tep_get_field_raw(s, trace_event, "event", record, &val, 0);
-
-	trace_seq_printf(s, "%24s x %s\n", state, event);
-
-	trace_seq_do_printf(s);
-	trace_seq_reset(s);
-
-	return 0;
-}
-
-static int ikm_enable_trace_events(char *monitor_name, struct trace_instance *inst)
-{
-	char event[MAX_DA_NAME_LEN + 7]; /* max(error_,event_) + '0' = 7 */
-	int retval;
-
-	snprintf(event, sizeof(event), "event_%s", monitor_name);
-	retval = tracefs_event_enable(inst->inst, "rv",  event);
-	if (retval)
-		return -1;
-
-	tep_register_event_handler(inst->tep, -1, "rv", event,
-				   ikm_event_handler, NULL);
-
-	snprintf(event, sizeof(event), "error_%s", monitor_name);
-	retval = tracefs_event_enable(inst->inst, "rv", event);
-	if (retval)
-		return -1;
-
-	tep_register_event_handler(inst->tep, -1, "rv", event,
-				   ikm_error_handler, NULL);
-
-	/* set if at least 1 monitor has id in case of a container */
-	config.has_id = ikm_has_id(monitor_name);
-	if (config.has_id < 0)
-		return -1;
-
-
-	return 0;
-}
-
-static int ikm_enable_trace_container(char *monitor_name,
-				      struct trace_instance *inst)
-{
-	DIR *dp;
-	char *abs_path, rv_path[MAX_PATH];
-	struct dirent *ep;
-	int retval = 0;
-
-	snprintf(rv_path, MAX_PATH, "rv/monitors/%s", monitor_name);
-	abs_path = tracefs_instance_get_file(NULL, rv_path);
-	if (!abs_path)
-		return -1;
-	dp = opendir(abs_path);
-	if (!dp)
-		goto out_free;
-
-	while (!retval && (ep = readdir(dp))) {
-		if (ep->d_type != DT_DIR || ep->d_name[0] == '.')
-			continue;
-		retval = ikm_enable_trace_events(ep->d_name, inst);
-	}
-
-	closedir(dp);
-out_free:
-	free(abs_path);
-	return retval;
-}
-
-/*
- * ikm_setup_trace_instance - set up a tracing instance to collect data
- *
- * Create a trace instance, enable rv: events and enable the trace.
- *
- * Returns the trace_instance * with all set, NULL otherwise.
- */
-static struct trace_instance *ikm_setup_trace_instance(char *monitor_name)
-{
-	struct trace_instance *inst;
-	int retval;
-
-	if (!config.trace)
-		return NULL;
-
-	/* alloc data */
-	inst = calloc(1, sizeof(*inst));
-	if (!inst) {
-		err_msg("ikm: failed to allocate trace instance");
-		goto out_err;
-	}
-
-	retval = trace_instance_init(inst, monitor_name);
-	if (retval)
-		goto out_free;
-
-	if (config.is_container)
-		retval = ikm_enable_trace_container(monitor_name, inst);
-	else
-		retval = ikm_enable_trace_events(monitor_name, inst);
-	if (retval)
-		goto out_inst;
-
-	/* ready to enable */
-	tracefs_trace_on(inst->inst);
-
-	return inst;
-
-out_inst:
-	trace_instance_destroy(inst);
-out_free:
-	free(inst);
-out_err:
-	return NULL;
-}
-
-/**
- * ikm_destroy_trace_instance - destroy a previously created instance
- */
-static void ikm_destroy_trace_instance(struct trace_instance *inst)
-{
-	if (!inst)
-		return;
-
-	trace_instance_destroy(inst);
-	free(inst);
-}
-
 /*
  * ikm_usage_print_reactors - print all available reactors, one per line.
  */
@@ -669,7 +391,7 @@ void ikm_usage_print_reactors(void)
  */
 int ikm_run_monitor(char *monitor_name, int argc, char **argv)
 {
-	struct trace_instance *inst = NULL;
+	struct trace_instance inst = {0};
 	char *nested_name, full_name[2*MAX_DA_NAME_LEN];
 	int retval;
 
@@ -712,8 +434,7 @@ int ikm_run_monitor(char *monitor_name, int argc, char **argv)
 	}
 
 	if (config.trace) {
-		inst = ikm_setup_trace_instance(nested_name);
-		if (!inst)
+		if (trace_instance_setup(&inst, nested_name))
 			goto out_free_instance;
 	}
 
@@ -722,16 +443,16 @@ int ikm_run_monitor(char *monitor_name, int argc, char **argv)
 		goto out_free_instance;
 
 	if (config.trace)
-		ikm_print_header(inst->seq);
+		trace_print_header(inst.seq);
 
 	while (!should_stop()) {
 		if (config.trace) {
-			retval = tracefs_iterate_raw_events(inst->tep,
-							    inst->inst,
+			retval = tracefs_iterate_raw_events(inst.tep,
+							    inst.inst,
 							    NULL,
 							    0,
 							    collect_registered_events,
-							    inst);
+							    &inst);
 			if (retval) {
 				err_msg("ikm: error reading trace buffer\n");
 				break;
@@ -742,7 +463,7 @@ int ikm_run_monitor(char *monitor_name, int argc, char **argv)
 	}
 
 	ikm_disable(full_name);
-	ikm_destroy_trace_instance(inst);
+	trace_instance_destroy(&inst);
 
 	if (config.reactor && config.initial_reactor)
 		ikm_write_reactor(full_name, config.initial_reactor);
@@ -750,7 +471,7 @@ int ikm_run_monitor(char *monitor_name, int argc, char **argv)
 	return 1;
 
 out_free_instance:
-	ikm_destroy_trace_instance(inst);
+	trace_instance_destroy(&inst);
 	if (config.reactor && config.initial_reactor)
 		ikm_write_reactor(full_name, config.initial_reactor);
 	return -1;

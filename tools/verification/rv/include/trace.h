@@ -14,3 +14,6 @@ void trace_instance_destroy(struct trace_instance *trace);
 
 int collect_registered_events(struct tep_event *event, struct tep_record *record,
 			      int cpu, void *context);
+
+void trace_print_header(struct trace_seq *s);
+int trace_instance_setup(struct trace_instance *inst, char *name);
