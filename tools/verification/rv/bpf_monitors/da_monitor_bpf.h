@@ -340,11 +340,10 @@ static inline void da_reset_bpf(da_id_type id, monitor_target_bpf target)
 
 #endif /* RV_MON_TYPE */
 
-#define _da_trace(type, fmt, ...)                     \
-	do {                                          \
-		if (trace_level >= type)              \
-			bpf_printk(fmt, __VA_ARGS__); \
-	} while (0)
+extern void bpf_rv_event_monitor(const char *mon, const char *str,
+				 const char *from, const char *event,
+				 const char *to) __ksym;
+extern void bpf_rv_error_monitor(const char *mon, const char *error_str) __ksym;
 
 #if RV_MON_TYPE == RV_MON_GLOBAL || RV_MON_TYPE == RV_MON_PER_CPU
 /*
@@ -358,17 +357,22 @@ static inline void da_trace_event(struct da_monitor *da_mon,
 				  const char *next_state, bool is_final,
 				  da_id_type id)
 {
-	_da_trace(RV_TRACE_EVENT, "event %s curr=%s event=%s next=%s final=%s\n",
-		  __stringify(MONITOR_NAME), curr_state, event, next_state,
-		  is_final);
+	if (trace_level >= RV_TRACE_EVENT)
+		bpf_rv_event_monitor(__stringify(MONITOR_NAME),
+				     is_final ? "(final) " : "",
+				     curr_state, event, next_state);
 }
 
 static inline void da_trace_error(struct da_monitor *da_mon,
 				  const char *curr_state, const char *event,
 				  da_id_type id)
 {
-	_da_trace(RV_TRACE_ERROR, "error %s curr=%s event=%s\n",
-		  __stringify(MONITOR_NAME), curr_state, event);
+	char str[128];
+
+	snprintf(str, sizeof(str), "event %s not expected in the state %s",
+		 event, state);
+	if (trace_level >= RV_TRACE_ERROR)
+		bpf_rv_error_monitor(__stringify(MONITOR_NAME), event);
 }
 
 /*
@@ -384,22 +388,31 @@ static inline da_id_type da_get_id(struct da_monitor *da_mon)
  * Trace events for per_task/per_object monitors, report the target id.
  */
 
+//TODO put id here
 static inline void da_trace_event(struct da_monitor *da_mon,
 				  const char *curr_state, const char *event,
 				  const char *next_state, bool is_final,
 				  da_id_type id)
 {
-	_da_trace(RV_TRACE_EVENT, "event %s id=%d curr=%s event=%s next=%s final=%s\n",
-		  id, __stringify(MONITOR_NAME), curr_state, event, next_state,
-		  is_final);
+	char str[MAX_DA_NAME_LEN];
+
+	snprintf(str, sizeof(str), "%d: %s", id, final ? "(final) " : "");
+	if (trace_level >= RV_TRACE_EVENT)
+		bpf_rv_event_monitor(__stringify(MONITOR_NAME),
+				     is_final ? "(final) " : "",
+				     curr_state, event, next_state);
 }
 
 static inline void da_trace_error(struct da_monitor *da_mon,
 				  const char *curr_state, const char *event,
 				  da_id_type id)
 {
-	_da_trace(RV_TRACE_ERROR, "error %s id=%d curr=%s event=%s\n",
-		  id, __stringify(MONITOR_NAME), curr_state, event);
+	char str[128];
+
+	snprintf(str, sizeof(str), "%d: event %s not expected in the state %s",
+		 id, event, state);
+	if (trace_level >= RV_TRACE_ERROR)
+		bpf_rv_error_monitor(__stringify(MONITOR_NAME), event);
 }
 #endif /* RV_MON_TYPE */
 

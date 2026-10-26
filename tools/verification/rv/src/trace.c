@@ -22,6 +22,10 @@ static struct tracefs_instance *create_instance(char *instance_name)
 	return tracefs_instance_create(instance_name);
 }
 
+// TODO rearrange this one
+static int generic_event_handler(struct trace_seq *s, struct tep_record *record,
+				 struct tep_event *trace_event, void *context);
+
 /**
  * collect_registered_events - call the existing callback function for the event
  *
@@ -41,9 +45,9 @@ collect_registered_events(struct tep_event *event, struct tep_record *record,
 		return 1;
 
 	if (!event->handler)
-		return 0;
-
-	event->handler(s, record, event, context);
+		generic_event_handler(s, record, event, context);
+	else
+		event->handler(s, record, event, context);
 
 	return 0;
 }
@@ -275,9 +279,10 @@ static int da_error_handler(struct trace_seq *s, struct tep_record *record,
 /*
  * generic_event_handler - callback to handle events without a specific handler
  *
- * Called any time an event from a monitor type without a specific
- * handler, e.g. ltl, is generated. It prints the event using its
- * print fmt.
+ * Called from collect_registered_events for events from a monitor type
+ * without a specific handler, e.g. ltl. It prints the event using its
+ * print fmt. It is not registered via tep_register_event_handler, so
+ * TEP_PRINT_INFO pretty-prints the event without recursing into us.
  */
 static int generic_event_handler(struct trace_seq *s, struct tep_record *record,
 				  struct tep_event *trace_event, void *context)
@@ -330,12 +335,61 @@ static int enable_monitor_event(struct trace_instance *inst, char *event,
 		return -1;
 	}
 
+	/*
+	 * Non-da events get no handler: collect_registered_events falls
+	 * back to generic_event_handler for them. Registering it here
+	 * would make TEP_PRINT_INFO recurse into it.
+	 */
+	// TODO this can return earlier
 	if (event_is_da(tevent))
 		tep_register_event_handler(inst->tep, -1, "rv", event,
 					   da_handler, NULL);
-	else
-		tep_register_event_handler(inst->tep, -1, "rv", event,
-					   generic_event_handler, NULL);
+
+	return 0;
+}
+
+static int enable_bpf_event(struct trace_instance *inst, const char *event_name, char *name)
+{
+	struct tep_event *tevent;
+	char filter[MAX_DA_NAME_LEN + 16];
+
+	if (tracefs_event_enable(inst->inst, "rv", event_name))
+		return -1;
+
+	tevent = tep_find_event_by_name(inst->tep, "rv", event_name);
+	if (!tevent) {
+		err_msg("trace: fail finding the rv:%s event\n", event_name);
+		return -1;
+	}
+
+	snprintf(filter, sizeof(filter), "mon == \"%s\"", name);
+
+	if (tracefs_event_filter_apply(inst->inst, tevent, filter) < 0) {
+		char *err = tracefs_error_last(inst->inst);
+
+		err_msg("trace: fail applying filter %s:\n%s\n", filter, err);
+		free(err);
+		return -1;
+	}
+
+	return 0;
+}
+
+/*
+ * enable_bpf_printk_event - enable rv:event_monitor and rv:error_monitor for a monitor
+ *
+ * BPF monitors report via generic rv:event_monitor and rv:error_monitor events.
+ * Enable the events and filter them to only collect the messages of the given monitor.
+ *
+ * Returns 0 on success, -1 otherwise.
+ */
+static int enable_bpf_printk_event(struct trace_instance *inst, char *name)
+{
+	if (enable_bpf_event(inst, "event_monitor", name))
+		return -1;
+
+	if (enable_bpf_event(inst, "error_monitor", name))
+		return -1;
 
 	return 0;
 }
@@ -354,6 +408,9 @@ static int trace_enable_monitor_events(struct trace_instance *inst, char *name)
 {
 	char event[MAX_DA_NAME_LEN + 7]; /* max(error_,event_) + '0' = 7 */
 	int retval;
+
+	if (config.is_bpf)
+		return enable_bpf_printk_event(inst, name);
 
 	snprintf(event, sizeof(event), "event_%s", name);
 	retval = enable_monitor_event(inst, event, da_event_handler);

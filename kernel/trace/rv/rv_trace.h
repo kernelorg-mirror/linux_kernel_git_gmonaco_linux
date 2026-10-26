@@ -289,6 +289,67 @@ DECLARE_EVENT_CLASS(error_ltl_monitor_id,
 // Add new monitors based on CONFIG_LTL_MON_EVENTS_ID here
 #endif /* CONFIG_LTL_MON_EVENTS_ID */
 
+// TODO this should be improved and defined in da/ltl headers
+#define EVENT_STR_DA(str, final) snprintf(str, sizeof(str), "%s", final ? "(final) " : "")
+#define EVENT_STR_DA_ID(str, id, final) \
+	snprintf(str, sizeof(str), "%d: %s", id, final ? "(final) " : "")
+#define EVENT_STR_LTL_ID(str, tsk) snprintf(str, sizeof(str), "%s[%d]: ", tsk->comm, tsk->pid)
+
+// TODO this is not going to work in BPF, max 5 arguments
+// these are also not constants for verifier (state selector isn't constant)
+// should either pass array or really go for a standard string and be done with it
+// see gemini --resume 55e755c1-eee7-4d42-9f19-5ca043770809
+TRACE_EVENT(event_monitor,
+
+	TP_PROTO(const char *mon, const char *str, const char *from, const char *event, const char *to),
+
+	TP_ARGS(mon, str, from, event, to),
+
+	TP_STRUCT__entry(
+		__string(	mon,	mon	)
+		__string(	str,	str	)
+		__string(	from,	from	)
+		__string(	event,	event	)
+		__string(	to,	to	)
+	),
+
+	TP_fast_assign(
+		__assign_str(mon);
+		__assign_str(str);
+		__assign_str(from);
+		__assign_str(event);
+		__assign_str(to);
+	),
+
+	TP_printk("%s: %s%s x %s -> %s",
+		__get_str(mon),
+		__get_str(str),
+		__get_str(from),
+		__get_str(event),
+		__get_str(to))
+);
+
+TRACE_EVENT(error_monitor,
+
+	TP_PROTO(const char *mon, const char *error_str),
+
+	TP_ARGS(mon, error_str),
+
+	TP_STRUCT__entry(
+		__string(	mon,		mon		)
+		__string(	error_str,	error_str	)
+	),
+
+	TP_fast_assign(
+		__assign_str(mon);
+		__assign_str(error_str);
+	),
+
+	TP_printk("%s: %s",
+		__get_str(mon),
+		__get_str(error_str))
+);
+
 #ifdef CONFIG_RV_MON_MAINTENANCE_EVENTS
 /* Tracepoint useful for monitors development, currenly only used in DA */
 TRACE_EVENT(rv_retries_error,

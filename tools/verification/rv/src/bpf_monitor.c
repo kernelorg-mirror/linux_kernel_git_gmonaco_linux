@@ -19,6 +19,7 @@
 #include <bpf/btf.h>
 
 #include <bpf_monitor.h>
+#include <trace.h>
 #include <utils.h>
 #include <rv.h>
 
@@ -51,43 +52,8 @@ static const char *const trace_type_names[] = {
 	[TRACE_TYPE_EVENT] = "RV_TRACE_EVENT",
 };
 
-enum field_id {
-	FIELD_EVENT_TYPE,
-	FIELD_ID,
-	FIELD_CPU,
-	FIELD_PID,
-	FIELD_COMM,
-	FIELD_IS_FINAL,
-	FIELD_CURR_STATE,
-	FIELD_EVENT,
-	FIELD_NEXT_STATE,
-	FIELD_MAX,
-};
-
-static const char *const field_names[] = {
-	[FIELD_EVENT_TYPE] = "event_type",
-	[FIELD_ID] = "id",
-	[FIELD_CPU] = "cpu",
-	[FIELD_PID] = "pid",
-	[FIELD_COMM] = "comm",
-	[FIELD_IS_FINAL] = "is_final",
-	[FIELD_CURR_STATE] = "curr_state",
-	[FIELD_EVENT] = "event",
-	[FIELD_NEXT_STATE] = "next_state",
-};
-
-struct field {
-	size_t offset;
-	size_t size;
-};
-
 struct bpf_monitor_ctx {
 	char monitor_name[MAX_DA_NAME_LEN];
-	char state_names[MAX_ENUMS][MAX_DA_NAME_LEN];
-	char event_names[MAX_ENUMS][MAX_DA_NAME_LEN];
-	int num_states;
-	int num_events;
-	struct field field_metadata[FIELD_MAX];
 	int trace_types[TRACE_TYPE_MAX];
 };
 
@@ -294,81 +260,6 @@ static int libbpf_print_fn(enum libbpf_print_level level, const char *format,
 }
 
 /*
- * Helper functions for state/event name lookup
- */
-static const char *get_state_name(struct bpf_monitor_ctx *ctx, uint32_t state)
-{
-	if (state < ctx->num_states)
-		return ctx->state_names[state];
-
-	return "<invalid>";
-}
-
-static const char *get_event_name(struct bpf_monitor_ctx *ctx, uint32_t event)
-{
-	if (event < ctx->num_events)
-		return ctx->event_names[event];
-
-	return "<invalid>";
-}
-
-/*
- * extract_field_metadata - extract field metadata from BTF for efficient parsing
- *
- * Introspect the rv_trace_entry structure via BTF and store field offsets and
- * sizes for direct memory access during event processing.
- * This allows for parsing known fields without having to stick to a particular
- * memory layout in future releases.
- *
- * Returns 0 on success, -1 on error
- */
-static int extract_field_metadata(const struct btf *btf, struct bpf_monitor_ctx *ctx)
-{
-	const struct btf_type *trace_type;
-	const struct btf_member *members;
-	int type_id, vlen;
-
-	type_id = btf__find_by_name_kind(btf, RV_TRACE_STRUCT, BTF_KIND_STRUCT);
-	if (type_id <= 0) {
-		debug_msg("bpf: could not find struct '%s' in BTF\n", RV_TRACE_STRUCT);
-		return -1;
-	}
-
-	trace_type = btf__type_by_id(btf, type_id);
-	if (!trace_type) {
-		debug_msg("bpf: could not get type for '%s'\n", RV_TRACE_STRUCT);
-		return -1;
-	}
-
-	members = btf_members(trace_type);
-	vlen = btf_vlen(trace_type);
-
-	for (int i = 0; i < vlen; i++) {
-		const char *name = btf__name_by_offset(btf, members[i].name_off);
-		size_t offset = btf_member_bit_offset(trace_type, i) / 8;
-		size_t size = btf__resolve_size(btf, members[i].type);
-
-		if (!name || (ssize_t)size < 0)
-			continue;
-
-		debug_msg("bpf: field '%s' at offset %zu, size %lld\n", name,
-			  offset, (long long)size);
-
-		for (int j = 0; j < FIELD_MAX; j++) {
-			if (strcmp(name, field_names[j]) == 0) {
-				ctx->field_metadata[j].offset = offset;
-				ctx->field_metadata[j].size = size;
-				if (j == FIELD_ID)
-					config.has_id = true;
-				break;
-			}
-		}
-	}
-
-	return 0;
-}
-
-/*
  * extract_trace_type_metadata - extract trace type enum values from BTF
  *
  * Introspect the rv_trace_type enum via BTF and store enum values for
@@ -424,170 +315,6 @@ static int extract_trace_type_metadata(const struct btf *btf, struct bpf_monitor
 }
 
 /*
- * bpf_print_header - print trace output header
- */
-static void bpf_print_header(void)
-{
-	printf("%16s-%-8s %5s %5s ", "<TASK>", "PID", "[CPU]", "TYPE");
-	if (config.has_id)
-		printf(" %8s", "ID");
-
-	printf("%24s x %-24s -> %-24s %s\n",
-		"STATE",
-		"EVENT",
-		"NEXT_STATE",
-		"FINAL");
-
-	printf("%16s %-8s %5s %5s ", " | ", " | ", " | ", " | ");
-
-	if (config.has_id)
-		printf(" %8s", " | ");
-	printf("%24s   %-24s    %-24s %s\n", " | ", " | ", " | ", "|");
-}
-
-static inline uint64_t read_field(uint64_t *entry, enum field_id id,
-				  const uint8_t *raw,
-				  const struct bpf_monitor_ctx *ctx)
-{
-	const struct field *field = &ctx->field_metadata[id];
-
-	switch (field->size) {
-	case 1:
-		return entry[id] = *(const uint8_t *)(raw + field->offset);
-	case 2:
-		return entry[id] = *(const uint16_t *)(raw + field->offset);
-	case 4:
-		return entry[id] = *(const uint32_t *)(raw + field->offset);
-	case 8:
-		return entry[id] = *(const uint64_t *)(raw + field->offset);
-	}
-	return 0;
-}
-
-/*
- * handle_event - ring buffer callback for trace events
- */
-static int handle_event(void *ctx, void *data, size_t data_sz)
-{
-	struct bpf_monitor_ctx *mon_ctx = ctx;
-	const uint8_t *raw = data;
-	uint64_t entry[FIELD_MAX] = {0};
-	const char *comm;
-
-	if (should_stop())
-		return 1;
-
-	if (config.has_id)
-		read_field(entry, FIELD_ID, raw, mon_ctx);
-	read_field(entry, FIELD_PID, raw, mon_ctx);
-
-	if (config.has_id && (config.my_pid == entry[FIELD_ID]))
-		return 0;
-	else if (config.my_pid == entry[FIELD_PID])
-		return 0;
-
-	read_field(entry, FIELD_EVENT_TYPE, raw, mon_ctx);
-	read_field(entry, FIELD_CPU, raw, mon_ctx);
-	comm = (const char *)(raw + mon_ctx->field_metadata[FIELD_COMM].offset);
-	read_field(entry, FIELD_CURR_STATE, raw, mon_ctx);
-	read_field(entry, FIELD_EVENT, raw, mon_ctx);
-
-	printf("%16s-%-8"PRIu64" [%.3"PRIu64"] ", comm, entry[FIELD_PID], entry[FIELD_CPU]);
-	if (entry[FIELD_EVENT_TYPE] == mon_ctx->trace_types[TRACE_TYPE_ERROR]) {
-		printf("error ");
-		if (config.has_id)
-			printf(" %8"PRIu64"", entry[FIELD_ID]);
-		printf(" %24s x %-24s\n",
-		       get_state_name(mon_ctx, entry[FIELD_CURR_STATE]),
-		       get_event_name(mon_ctx, entry[FIELD_EVENT]));
-	} else if (entry[FIELD_EVENT_TYPE] == mon_ctx->trace_types[TRACE_TYPE_EVENT]) {
-		printf("event ");
-		read_field(entry, FIELD_IS_FINAL, raw, mon_ctx);
-		read_field(entry, FIELD_NEXT_STATE, raw, mon_ctx);
-
-		if (config.has_id)
-			printf(" %8"PRIu64"", entry[FIELD_ID]);
-		printf(" %24s x %-24s -> %-24s %c\n",
-		       get_state_name(mon_ctx, entry[FIELD_CURR_STATE]),
-		       get_event_name(mon_ctx, entry[FIELD_EVENT]),
-		       get_state_name(mon_ctx, entry[FIELD_NEXT_STATE]),
-		       entry[FIELD_IS_FINAL] ? 'Y' : 'N');
-	}
-
-	return 0;
-}
-
-/*
- * extract_enum_names - extract names from a BTF enum
- *
- * Reads enum member names from BTF and stores them in dest array.
- * Returns the number of enum members extracted (excluding the
- * {state/event}_max_NAME entry and trimming the _NAME padding)
- * on success, or -1 on error.
- */
-static int extract_enum_names(const struct btf *btf, const char *enum_kind,
-			       char dest[][MAX_DA_NAME_LEN], struct bpf_monitor_ctx *ctx)
-{
-	const struct btf_type *enum_type;
-	const struct btf_enum *enums;
-	char buf[2 * MAX_DA_NAME_LEN];
-	bool arrived_at_last = false;
-	int type_id, vlen;
-	int count = 0;
-
-	snprintf(buf, sizeof(buf), "%ss_%s", enum_kind, ctx->monitor_name);
-	type_id = btf__find_by_name_kind(btf, buf, BTF_KIND_ENUM);
-	if (type_id <= 0) {
-		debug_msg("bpf: could not find enum '%s' in BTF\n", buf);
-		return -1;
-	}
-	enum_type = btf__type_by_id(btf, type_id);
-	if (!enum_type)
-		return -1;
-
-	enums = btf_enum(enum_type);
-	vlen = btf_vlen(enum_type);
-
-	snprintf(buf, sizeof(buf), "%s_max_%s", enum_kind, ctx->monitor_name);
-	for (int i = 0; i < vlen; i++) {
-		const char *name = btf__name_by_offset(btf, enums[i].name_off);
-		const char *padding;
-		size_t name_len;
-
-		if (!name || count >= MAX_ENUMS)
-			break;
-
-		/* max value must be the last */
-		if (!strcmp(name, buf)) {
-			if (i == vlen - 1)
-				arrived_at_last = true;
-			break;
-		}
-
-		padding = strrchr(name, '_');
-		name_len = strlen(name);
-		if (padding && !strcmp(ctx->monitor_name, padding + 1))
-			name_len = (size_t)(padding - name);
-
-		if (!name_len)
-			break;
-
-		if (name_len >= MAX_DA_NAME_LEN)
-			name_len = MAX_DA_NAME_LEN - 1;
-		strncpy(dest[count], name, name_len);
-		dest[count][name_len] = '\0';
-		count++;
-	}
-
-	if (!arrived_at_last) {
-		debug_msg("bpf: malformed %ss enum, could fill %d\n", enum_kind, count);
-		return -1;
-	}
-
-	return count;
-}
-
-/*
  * extract_btf_info - extract BTF types information from the monitor
  *
  * Extract state and event names from enums using BTF and extract field
@@ -605,19 +332,6 @@ static int extract_btf_info(struct bpf_object *obj, struct bpf_monitor_ctx *ctx)
 
 	if (extract_trace_type_metadata(btf, ctx)) {
 		err_msg("bpf: failed to extract trace type metadata\n");
-		return -1;
-	}
-
-	if (extract_field_metadata(btf, ctx)) {
-		err_msg("bpf: failed to extract field metadata\n");
-		return -1;
-	}
-
-	ctx->num_states = extract_enum_names(btf, "state", ctx->state_names, ctx);
-	ctx->num_events = extract_enum_names(btf, "event", ctx->event_names, ctx);
-	if (ctx->num_states < 0 || ctx->num_events < 0) {
-		err_msg("bpf: failed to extract states (%d) or events names (%d)\n",
-			ctx->num_states, ctx->num_events);
 		return -1;
 	}
 
@@ -651,34 +365,6 @@ static int find_bpf_file(const char *subdir, const char *name, char *path_out, s
 static int find_bpf_monitor(const char *monitor_name, char *path_out, size_t path_len)
 {
 	return find_bpf_file("bpf_monitors", monitor_name, path_out, path_len);
-}
-
-/*
- * bpf_setup_ring_buffer - set up the ring buffer to trace events
- *
- * Find the ring buffer map and set up the events handler.
- */
-static struct ring_buffer *bpf_setup_ring_buffer(struct bpf_object *obj,
-						 struct bpf_monitor_ctx *ctx)
-{
-	struct ring_buffer *rb;
-	struct bpf_map *map;
-	char ringbuf_name[2 * MAX_DA_NAME_LEN];
-
-	snprintf(ringbuf_name, sizeof(ringbuf_name), "rv_rb_%s", ctx->monitor_name);
-	map = bpf_object__find_map_by_name(obj, ringbuf_name);
-	if (!map) {
-		err_msg("bpf: error finding ring buffer %s\n", ringbuf_name);
-		return NULL;
-	}
-
-	rb = ring_buffer__new(bpf_map__fd(map), handle_event, ctx, NULL);
-	if (!rb) {
-		err_msg("bpf: error opening ring buffer: %s\n", strerror(errno));
-		return NULL;
-	}
-
-	return rb;
 }
 
 /*
@@ -882,8 +568,8 @@ static int bpf_validate_name(const char *monitor_name)
 int bpf_run_monitor(char *monitor_name, int argc, char **argv)
 {
 	struct bpf_link *links[MAX_LINKS] = {0};
+	struct trace_instance inst = {0};
 	struct bpf_monitor_ctx ctx = {0};
-	struct ring_buffer *rb = NULL;
 	struct bpf_object *obj = NULL;
 	int res, link_count = 0, enable_mon_fd, retval = -1;
 	char monitor_path[MAX_PATH];
@@ -920,8 +606,7 @@ int bpf_run_monitor(char *monitor_name, int argc, char **argv)
 		goto cleanup;
 
 	if (config.trace) {
-		rb = bpf_setup_ring_buffer(obj, &ctx);
-		if (!rb)
+		if (trace_instance_setup(&inst, monitor_name))
 			goto cleanup;
 	}
 
@@ -942,29 +627,32 @@ int bpf_run_monitor(char *monitor_name, int argc, char **argv)
 	}
 
 	if (config.trace)
-		bpf_print_header();
+		trace_print_header(inst.seq);
 
 	while (!should_stop()) {
-		if (!config.trace) {
-			sleep(1);
-			continue;
+		if (config.trace) {
+			res = tracefs_iterate_raw_events(inst.tep,
+							 inst.inst,
+							 NULL,
+							 0,
+							 collect_registered_events,
+							 &inst);
+			if (res) {
+				err_msg("bpf: error reading trace buffer\n");
+				break;
+			}
 		}
-		res = ring_buffer__poll(rb, 100);
-		if (res == -EINTR)
-			break;
-		if (res < 0) {
-			err_msg("bpf: error polling ring buffer: %s\n", strerror(-res));
-			goto cleanup;
-		}
+
+		sleep(1);
 	}
+
 	retval = 1;
 
 cleanup:
 	for (int i = 0; i < link_count; i++)
 		bpf_link__destroy(links[i]);
 
-	if (config.trace)
-		ring_buffer__free(rb);
+	trace_instance_destroy(&inst);
 
 	bpf_object__close(obj);
 
