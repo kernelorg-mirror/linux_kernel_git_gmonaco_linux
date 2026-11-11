@@ -289,6 +289,43 @@ DECLARE_EVENT_CLASS(error_ltl_monitor_id,
 // Add new monitors based on CONFIG_LTL_MON_EVENTS_ID here
 #endif /* CONFIG_LTL_MON_EVENTS_ID */
 
+DECLARE_EVENT_CLASS(event_template_monitor,
+
+	TP_PROTO(const char *mon, const int *id, const char *msg),
+
+	TP_ARGS(mon, id, msg),
+
+	TP_STRUCT__entry(
+		__string(	mon,	mon	)
+		__field(	u8,	has_id	)
+		__field(	int,	id	)
+		__string(	msg,	msg	)
+	),
+
+	TP_fast_assign(
+		__assign_str(mon);
+		__entry->has_id = !!id;
+		__entry->id = id ? *id : 0;
+		__assign_str(msg);
+	),
+
+	/*
+	 * The id is used only for filters, if it is of interest in the format,
+	 * callers should pass it to the msg too.
+	 */
+	TP_printk("%s: %s",
+		__get_str(mon),
+		__get_str(msg))
+);
+
+DEFINE_EVENT(event_template_monitor, event_monitor,
+	TP_PROTO(const char *mon, const int *id, const char *msg),
+	TP_ARGS(mon, id, msg));
+
+DEFINE_EVENT(event_template_monitor, error_monitor,
+	TP_PROTO(const char *mon, const int *id, const char *msg),
+	TP_ARGS(mon, id, msg));
+
 #ifdef CONFIG_RV_MON_MAINTENANCE_EVENTS
 /* Tracepoint useful for monitors development, currenly only used in DA */
 TRACE_EVENT(rv_retries_error,
