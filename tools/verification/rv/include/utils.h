@@ -16,6 +16,7 @@ struct config {
 	bool debug;
 	bool is_container;
 	bool trace;
+	bool trace_errors_only;
 	bool is_bpf;
 	int my_pid;
 	char *initial_reactor;

@@ -19,3 +19,9 @@
 **-v**, **--verbose**
 
         Print debug messages.
+
+**-E**, **--errors-only**
+
+        When tracing (**-t**), trace only error events, skipping the monitor's
+	state transitions. Specifying this without tracing is meaningful only
+	for BPF monitors.

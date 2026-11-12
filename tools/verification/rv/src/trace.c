@@ -213,7 +213,7 @@ static int enable_generic_event(struct trace_instance *inst, const char *event_n
  */
 static int enable_bpf_events(struct trace_instance *inst, char *name)
 {
-	if (enable_generic_event(inst, "event_monitor", name))
+	if (!config.trace_errors_only && enable_generic_event(inst, "event_monitor", name))
 		return -1;
 
 	if (enable_generic_event(inst, "error_monitor", name))
@@ -228,6 +228,7 @@ static int enable_bpf_events(struct trace_instance *inst, char *name)
  * Enable the rv:event_"monitor" and rv:error_"monitor" events in the
  * given trace instance, and register the filters for these events.
  * If enabled, the filter for self pid (-s) is applied here.
+ * Skip the "event" events if errors only (-E) is specified.
  *
  * Returns 0 on success, -1 otherwise.
  */
@@ -238,9 +239,11 @@ static int trace_enable_monitor_events(struct trace_instance *inst, char *name)
 	if (config.is_bpf)
 		return enable_bpf_events(inst, name);
 
-	snprintf(event, sizeof(event), "event_%s", name);
-	if (enable_specific_event(inst, event))
-		return -1;
+	if (!config.trace_errors_only) {
+		snprintf(event, sizeof(event), "event_%s", name);
+		if (enable_specific_event(inst, event))
+			return -1;
+	}
 
 	snprintf(event, sizeof(event), "error_%s", name);
 	if (enable_specific_event(inst, event))

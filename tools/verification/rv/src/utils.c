@@ -65,6 +65,7 @@ void mon_usage(int exit_val, char *monitor_name, const char *fmt, ...)
 		"	-r/--reactor 'reactor': enables the 'reactor'",
 		"	-s/--self: when tracing (-t), also trace rv command",
 		"	-t/--trace: trace monitor's event",
+		"	-E/--errors-only: when tracing (-t), trace only errors",
 		"	-v/--verbose: print debug messages",
 		"",
 		NULL,
@@ -76,7 +77,7 @@ void mon_usage(int exit_val, char *monitor_name, const char *fmt, ...)
 
 	fprintf(stderr, "  %s\n", message);
 
-	fprintf(stderr, "\n  usage: rv mon %s [-h] [-q] [-r reactor] [-s] [-v]", monitor_name);
+	fprintf(stderr, "\n  usage: rv mon %s [-E] [-h] [-r reactor] [-s] [-t] [-v]", monitor_name);
 
 	for (i = 0; usage[i]; i++)
 		fprintf(stderr, "%s\n", usage[i]);
@@ -103,6 +104,7 @@ int parse_arguments(char *monitor_name, int argc, char **argv)
 			{"reactor",		required_argument,	0, 'r'},
 			{"self",		no_argument,		0, 's'},
 			{"trace",		no_argument,		0, 't'},
+			{"errors-only",		no_argument,		0, 'E'},
 			{"verbose",		no_argument,		0, 'v'},
 			{0, 0, 0, 0}
 		};
@@ -110,7 +112,7 @@ int parse_arguments(char *monitor_name, int argc, char **argv)
 		/* getopt_long stores the option index here. */
 		int option_index = 0;
 
-		c = getopt_long(argc, argv, "hr:stv", long_options, &option_index);
+		c = getopt_long(argc, argv, "hr:stvE", long_options, &option_index);
 
 		/* detect the end of the options. */
 		if (c == -1)
@@ -131,6 +133,9 @@ int parse_arguments(char *monitor_name, int argc, char **argv)
 			break;
 		case 'v':
 			config.debug = 1;
+			break;
+		case 'E':
+			config.trace_errors_only = 1;
 			break;
 		}
 	}

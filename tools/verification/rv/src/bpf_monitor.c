@@ -396,7 +396,9 @@ static int bpf_enable_tracing(struct bpf_object *obj, struct bpf_monitor_ctx *ct
 	if (!trace_level || data_size != sizeof(*trace_level))
 		return -1;
 
-	*trace_level = ctx->trace_types[TRACE_TYPE_EVENT];
+	*trace_level = config.trace_errors_only ?
+			       ctx->trace_types[TRACE_TYPE_ERROR] :
+			       ctx->trace_types[TRACE_TYPE_EVENT];
 	return 0;
 }
 
